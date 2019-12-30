@@ -8,9 +8,13 @@ import { MatListModule } from '@angular/material/list';
 import {MatButtonModule} from '@angular/material/button';
 import {MatCardModule} from '@angular/material/card'
 import { MenuComponent } from './menu/menu.component';
+
 import { AppComponent } from './app.component';
 import { DishdetailComponent } from './dishdetail/dishdetail.component';
+
 import 'hammerjs';
+
+import {DishService} from './services/dish.service'
 
 @NgModule(
   {
@@ -29,7 +33,7 @@ import 'hammerjs';
     MatButtonModule,
     MatListModule
   ],
-  providers: [],
+  providers: [DishService],
   bootstrap: [AppComponent]
 })
 export class AppModule { }

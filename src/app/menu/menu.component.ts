@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import {Dish} from '../shared/dish'
-import {DISHES} from '../shared/dishes'
+import {DishService} from '../services/dish.service'
 
 
 @Component(
@@ -13,14 +13,17 @@ import {DISHES} from '../shared/dishes'
 export class MenuComponent implements OnInit {
 
   //name of variable :type of variable = assignment of data
-  dishes:Dish[] =DISHES;
-
+  dishes:Dish[];
+  myService:DishService
   //declaration of variable with its type
   selectedDish:Dish;
 
-  constructor() { }
+  constructor(private dishService:DishService) { 
+    this.myService=dishService
+  }
 
   ngOnInit() {
+    this.dishes=this.myService.getDishes();
   }
 
   onSelect(dish:Dish){

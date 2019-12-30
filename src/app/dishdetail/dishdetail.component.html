@@ -1,43 +1,39 @@
-<div class="container"
-    fxLayout="row"
-    fxLayout.sm="column"
-    fxLayout.xs="column"
-    fxLayoutAlign.gt-md="space-around center"
-    fxLayoutGap="10px" 
-    fxLayoutGap.xs="0">
-<div fxFlex="40" *ngIf="oneWayBindedDish">
-  <mat-card>
-    <mat-card-header>
-      <mat-card-title>
-        <h3>{{oneWayBindedDish.name | uppercase}}</h3>
-      </mat-card-title>
-    </mat-card-header>
-    <img mat-card-image src={{oneWayBindedDish.image}} />
-    <mat-card-content>
-      <p>{{oneWayBindedDish.description}}</p>
-    </mat-card-content>
-    <mat-card-actions>
-      <button mat-button>LIKE</button>
-      <button mat-button>SHARE</button>
-    </mat-card-actions>
-  </mat-card>
-</div>
+<div class="container" fxLayout="row" fxLayout.sm="column" fxLayout.xs="column"
+  fxLayoutAlign.gt-md="space-around center" fxLayoutGap="10px" fxLayoutGap.xs="0">
+  
+  <div fxFlex="40" *ngIf="oneWayBindedDish">
+    <mat-card>
+      <mat-card-header>
+        <mat-card-title>
+          <h3>{{oneWayBindedDish.name | uppercase}}</h3>
+        </mat-card-title>
+      </mat-card-header>
+      <img mat-card-image src={{oneWayBindedDish.image}} />
+      <mat-card-content>
+        <p>{{oneWayBindedDish.description}}</p>
+      </mat-card-content>
+      <mat-card-actions>
+        <button mat-button>LIKE</button>
+        <button mat-button>SHARE</button>
+      </mat-card-actions>
+    </mat-card>
+  </div>
 
-<div fxflex="40">
-  <h3 mat-line="">Comments</h3>
-  <mat-list *ngIf="oneWayBindedDish">
-    <mat-list-item *ngFor="let comment of oneWayBindedDish.comments">
-      <p mat-line="">
-        <span>{{comment.comment}}</span>
-      </p>
-      <p mat-line="">
-        <span>{{comment.rating}} Stars</span>
-      </p>
-      <p mat-line="">
-        <span>-- {{comment.author}} {{ comment.date | date }}</span>
-      </p>
-    </mat-list-item>
-  </mat-list>
-</div>
+  <div fxflex="40" *ngIf="oneWayBindedDish">
+    <h3 mat-line="">Comments</h3>
+    <mat-list >
+      <mat-list-item *ngFor="let comment of oneWayBindedDish.comments">
+        <p mat-line="">
+          <span>{{comment.comment}}</span>
+        </p>
+        <p mat-line="">
+          <span>{{comment.rating}} Stars</span>
+        </p>
+        <p mat-line="">
+          <span>-- {{comment.author}} {{ comment.date | date }}</span>
+        </p>
+      </mat-list-item>
+    </mat-list>
+  </div>
 
 </div>
