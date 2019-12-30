@@ -23,6 +23,7 @@ export class MenuComponent implements OnInit {
   }
 
   ngOnInit() {
+    //class level variables are used with this keyword and also constructor injections
     this.dishes=this.myService.getDishes();
   }
 
