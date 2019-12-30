@@ -9,10 +9,34 @@ import {DISHES} from '../shared/dishes';
 )
 export class DishService {
 
-  constructor() { }
+  dishes:Dish[];
+
+  constructor() {
+    this.dishes=DISHES;
+   }
 
   getDishes():Dish[]
   {
     return DISHES;
+  }
+
+  getDish(id:string):Dish{
+    var d;
+    this.dishes.forEach((dish)=>{
+      if(dish.id===id){
+        d= dish;
+      }
+    })
+    return d;
+  }
+  
+  getFeaturedDish():Dish{
+    var d;
+    this.dishes.forEach((dish)=>{
+      if(dish.featured){
+        d= dish;
+      }
+    })
+    return d;
   }
 }

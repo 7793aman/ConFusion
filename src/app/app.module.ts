@@ -22,7 +22,7 @@ import { MenuComponent } from './menu/menu.component';
 
 
 import {DishService} from './services/dish.service';
-
+import {PromotionService} from './services/promotion.service';
 
 
 @NgModule(
@@ -48,7 +48,7 @@ import {DishService} from './services/dish.service';
     MatListModule,
     AppRoutingModule
   ],
-  providers: [DishService],
+  providers: [DishService,PromotionService],
   bootstrap: [AppComponent]
 })
 export class AppModule { }
