@@ -18,11 +18,13 @@ import { ContactComponent } from './contact/contact.component'
 import { HeaderComponent } from './header/header.component';
 import { FooterComponent } from './footer/footer.component';
 import { MenuComponent } from './menu/menu.component';
-
+import {MatDialogModule} from '@angular/material';
 
 
 import {DishService} from './services/dish.service';
 import {PromotionService} from './services/promotion.service';
+import {LeaderService} from './services/leader.service';
+import { LoginComponent } from './login/login.component';
 
 
 @NgModule(
@@ -35,7 +37,8 @@ import {PromotionService} from './services/promotion.service';
     FooterComponent,
     HomeComponent,
     AboutComponent,
-    ContactComponent
+    ContactComponent,
+    LoginComponent
   ],
   imports: [
     BrowserModule,
@@ -46,9 +49,17 @@ import {PromotionService} from './services/promotion.service';
     MatCardModule,
     MatButtonModule,
     MatListModule,
-    AppRoutingModule
+    AppRoutingModule,
+    MatDialogModule
   ],
-  providers: [DishService,PromotionService],
-  bootstrap: [AppComponent]
+  providers: [
+    DishService,
+    PromotionService,
+    LeaderService
+  ],
+  entryComponents:[
+    LoginComponent 
+  ],
+    bootstrap: [AppComponent]
 })
 export class AppModule { }
