@@ -24,7 +24,14 @@ export class MenuComponent implements OnInit {
 
   ngOnInit() {
     //class level variables are used with this keyword and also constructor injections
-    this.dishes=this.myService.getDishes();
+    
+    this.myService.getDishes().then(
+      (result) => {
+        this.dishes=result
+      }
+    ).catch((error)=>{
+      console.log(error);
+    })
   }
 
   onSelect(dish:Dish){

@@ -11,28 +11,28 @@ export class PromotionService {
   constructor() { }
 
 
-getPromotions():Promotion[]
+getPromotions():Promise<Promotion[]>
   {
-    return PROMOTIONS;
+    return Promise.resolve(PROMOTIONS);
   }
 
-  getPromotion(id:string):Promotion{
+  getPromotion(id:string):Promise<Promotion>{
     var p;
     PROMOTIONS.forEach((promotion)=>{
       if(promotion.id===id){
         p= promotion;
       }
     })
-    return p;
+    return Promise.resolve(p);
   }
   
-  getFeaturedPromotion():Promotion{
+  getFeaturedPromotion():Promise<Promotion>{
     var p;
     PROMOTIONS.forEach((promotion)=>{
       if(promotion.featured){
         p= promotion;
       }
     })
-    return p;
+    return Promise.resolve(p);
   }
 }

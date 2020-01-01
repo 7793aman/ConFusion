@@ -12,17 +12,17 @@ leaders:Leader[]=LEADERS;
 
   constructor() { }
 
-  getLeaders():Leader[]{
-    return this.leaders;
+  getLeaders():Promise<Leader[]>{
+    return Promise.resolve(this.leaders);
   }
 
-  getFeaturedLeader():Leader{
+  getFeaturedLeader():Promise<Leader>{
     var l;
     this.leaders.forEach((leader)=>{
       if(leader.featured){
         l= leader;
       }
     })
-    return l;
+    return Promise.resolve(l);
   }
 }
