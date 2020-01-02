@@ -17,49 +17,6 @@ export class DishService {
     this.dishes=DISHES;
    }
 
-  // getDishes():Promise<Dish[]>
-  // {
-  //   // return new Promise(function (resolve,reject) {
-  //   //   setTimeout(()=>{
-  //   //     resolve(DISHES);
-  //   //   },2000)
-  //   // })
-  //   return of(DISHES).pipe(delay(2000)).toPromise();
-  // }
-
-  // getDish(id:string):Promise<Dish>{
-  //   var d:Dish;
-  //   this.dishes.forEach((dish)=>{
-  //     if(dish.id===id){
-  //       d= dish;
-  //     }
-  //   })
-  //   // return new Promise(function (resolve,reject) {
-  //   //   setTimeout(()=>{
-  //   //     resolve(d);
-  //   //   },2000)
-  //   // })
-
-  //   return of(d).pipe(delay(2000)).toPromise();
-  // }
-  
-  // getFeaturedDish():Promise<Dish>{
-  //   var d:Dish;
-  //   this.dishes.forEach((dish)=>{
-  //     if(dish.featured){
-  //       d= dish;
-  //     }
-  //   })
-  //   // return new Promise(function (resolve,reject) {
-  //   //   setTimeout(()=>{
-  //   //     resolve(d);
-  //   //   },2000)
-  //   // })
-
-  //   return of(d).pipe(delay(2000)).toPromise();
-  // }
-
-
   getDishes():Observable<Dish[]>
   {
     return of(DISHES).pipe(delay(2000));
@@ -72,7 +29,7 @@ export class DishService {
         d= dish;
       }
     })
-      return of(d).pipe(delay(2000));
+      return of(d).pipe(delay(1000));
   }
   
   getFeaturedDish():Observable<Dish>{
@@ -83,5 +40,9 @@ export class DishService {
       }
     })
     return of(d).pipe(delay(2000));
+  }
+
+  getDishIds():Observable<string[] | any>{
+    return of(DISHES.map((dish)=>dish.id));
   }
 }
