@@ -22,23 +22,41 @@ export class HomeComponent implements OnInit {
 
   ngOnInit() {
 
-    this.dishService.getFeaturedDish().then((result) => {
-      this.dish = result
-    }).catch((error) => {
-      console.log(error);
-    });
+    // this.dishService.getFeaturedDish().then((result) => {
+    //   this.dish = result
+    // }).catch((error) => {
+    //   console.log(error);
+    // });
+    this.dishService.getFeaturedDish().subscribe(
+      (result) => {
+        this.dish = result;
+      }
+    )
 
-    this.promotionService.getFeaturedPromotion().then((result) => {
-      this.promotion = result
-    }).catch((error) => {
-      console.log(error);
-    });
+    // this.promotionService.getFeaturedPromotion().then((result) => {
+    //   this.promotion = result
+    // }).catch((error) => {
+    //   console.log(error);
+    // });
 
-    this.leaderService.getFeaturedLeader().then((result) => {
-      this.leader = result
-    }).catch((error) => {
-      console.log(error);
-    });
+    this.promotionService.getFeaturedPromotion().subscribe(
+      (value) => {
+        this.promotion = value;
+      }
+
+    )
+
+    //   this.leaderService.getFeaturedLeader().then((result) => {
+    //     this.leader = result
+    //   }).catch((error) => {
+    //     console.log(error);
+    //   });
+    // }
+
+    this.leaderService.getFeaturedLeader().subscribe(
+      (value) => {
+        this.leader = value
+      })
+    }
+
   }
-
-}

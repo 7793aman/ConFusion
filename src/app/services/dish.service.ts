@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
 import {Dish} from '../shared/dish';
 import {DISHES} from '../shared/dishes';
-import { promise } from 'protractor';
+import {of, Observable} from 'rxjs';
+import {delay} from 'rxjs/operators'
 
 @Injectable(
   {
@@ -16,28 +17,71 @@ export class DishService {
     this.dishes=DISHES;
    }
 
-  getDishes():Promise<Dish[]>
+  // getDishes():Promise<Dish[]>
+  // {
+  //   // return new Promise(function (resolve,reject) {
+  //   //   setTimeout(()=>{
+  //   //     resolve(DISHES);
+  //   //   },2000)
+  //   // })
+  //   return of(DISHES).pipe(delay(2000)).toPromise();
+  // }
+
+  // getDish(id:string):Promise<Dish>{
+  //   var d:Dish;
+  //   this.dishes.forEach((dish)=>{
+  //     if(dish.id===id){
+  //       d= dish;
+  //     }
+  //   })
+  //   // return new Promise(function (resolve,reject) {
+  //   //   setTimeout(()=>{
+  //   //     resolve(d);
+  //   //   },2000)
+  //   // })
+
+  //   return of(d).pipe(delay(2000)).toPromise();
+  // }
+  
+  // getFeaturedDish():Promise<Dish>{
+  //   var d:Dish;
+  //   this.dishes.forEach((dish)=>{
+  //     if(dish.featured){
+  //       d= dish;
+  //     }
+  //   })
+  //   // return new Promise(function (resolve,reject) {
+  //   //   setTimeout(()=>{
+  //   //     resolve(d);
+  //   //   },2000)
+  //   // })
+
+  //   return of(d).pipe(delay(2000)).toPromise();
+  // }
+
+
+  getDishes():Observable<Dish[]>
   {
-    return Promise.resolve(DISHES);
+    return of(DISHES).pipe(delay(2000));
   }
 
-  getDish(id:string):Promise<Dish>{
-    var d;
+  getDish(id:string):Observable<Dish>{
+    var d:Dish;
     this.dishes.forEach((dish)=>{
       if(dish.id===id){
         d= dish;
       }
     })
-    return Promise.resolve(d);
+      return of(d).pipe(delay(2000));
   }
   
-  getFeaturedDish():Promise<Dish>{
-    var d;
+  getFeaturedDish():Observable<Dish>{
+    var d:Dish;
     this.dishes.forEach((dish)=>{
       if(dish.featured){
         d= dish;
       }
     })
-    return Promise.resolve(d);
+    return of(d).pipe(delay(2000));
   }
 }

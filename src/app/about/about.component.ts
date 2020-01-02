@@ -15,11 +15,13 @@ export class AboutComponent implements OnInit {
   constructor(private leaderService:LeaderService) { }
 
   ngOnInit() {
-    this.leaderService.getLeaders().then((result) => {
-      this.leaders= result
-    }).catch((error) => {
-      console.log(error);
-    });
+    // this.leaderService.getLeaders().then((result) => {
+    //    
+    // }).catch((error) => {
+    //   console.log(error);
+    // });
+  
+    this.leaderService.getLeaders().subscribe(value =>this.leaders=value);
   }
 
 }
