@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit,Inject } from '@angular/core';
 import { Dish } from '../shared/dish'
 import { DishService } from '../services/dish.service'
 
@@ -12,36 +12,22 @@ import { DishService } from '../services/dish.service'
 )
 export class MenuComponent implements OnInit {
 
-  //name of variable :type of variable = assignment of data
   dishes: Dish[];
   myService: DishService
-  //declaration of variable with its type
-  selectedDish: Dish;
+  
 
-  constructor(private dishService: DishService) {
+  constructor(private dishService: DishService,@Inject('BaseURL') private baseURL) {
     this.myService = dishService
   }
 
   ngOnInit() {
-    //class level variables are used with this keyword and also constructor injections
-
-    // this.myService.getDishes().then(
-    //   (result) => {
-    //     this.dishes=result
-    //   }
-    // ).catch((error)=>{
-    //   console.log(error);
-    // })
-
+    
     this.dishService.getDishes().subscribe(
-
       (dishes) => {
         this.dishes = dishes
       }
 
     )
   }
-
-
 
 }

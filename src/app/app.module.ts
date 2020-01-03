@@ -27,12 +27,15 @@ import {FormsModule} from '@angular/forms';
 import {ReactiveFormsModule} from '@angular/forms'
 import {MatSelectModule} from '@angular/material/select';
 import {MatSlideToggleModule} from '@angular/material/slide-toggle'
+import {MatSliderModule} from '@angular/material/slider';
+import {HttpClientModule} from '@angular/common/http';
 
 import {DishService} from './services/dish.service';
 import {PromotionService} from './services/promotion.service';
 import {LeaderService} from './services/leader.service';
 import { LoginComponent } from './login/login.component';
-
+import {DatePipe} from '@angular/common';
+import {baseURL} from './shared/baseurl';
 
 @NgModule(
   {
@@ -65,12 +68,17 @@ import { LoginComponent } from './login/login.component';
     ReactiveFormsModule,
     MatSelectModule,
     MatSlideToggleModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    MatSliderModule,
+    HttpClientModule
   ],
   providers: [
     DishService,
     PromotionService,
-    LeaderService
+    LeaderService,
+    DatePipe   ,
+    //variables are declared like this
+   {provide:'BaseURL',useValue:baseURL} 
   ],
   entryComponents:[
     LoginComponent 

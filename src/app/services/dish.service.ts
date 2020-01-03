@@ -3,6 +3,9 @@ import {Dish} from '../shared/dish';
 import {DISHES} from '../shared/dishes';
 import {of, Observable} from 'rxjs';
 import {delay} from 'rxjs/operators'
+import { map } from 'rxjs/operators';
+import { HttpClient } from '@angular/common/http';
+import { baseURL } from '../shared/baseurl';
 
 @Injectable(
   {
@@ -13,36 +16,27 @@ export class DishService {
 
   dishes:Dish[];
 
-  constructor() {
+  constructor(private httpClient:HttpClient) {
     this.dishes=DISHES;
    }
 
   getDishes():Observable<Dish[]>
   {
-    return of(DISHES).pipe(delay(2000));
+    return this.httpClient.get<Dish[]>(baseURL + 'dishes');
   }
 
   getDish(id:string):Observable<Dish>{
-    var d:Dish;
-    this.dishes.forEach((dish)=>{
-      if(dish.id===id){
-        d= dish;
-      }
-    })
-      return of(d).pipe(delay(1000));
+    return this.httpClient.get<Dish>(baseURL + 'dishes/' + id);
   }
   
   getFeaturedDish():Observable<Dish>{
-    var d:Dish;
-    this.dishes.forEach((dish)=>{
-      if(dish.featured){
-        d= dish;
-      }
-    })
-    return of(d).pipe(delay(2000));
+    //since return type is observable we have to use map
+    return this.httpClient.get<Dish>(baseURL + 'dishes?featured=true').pipe(
+      map(dishes=>dishes[0])
+    );
   }
 
   getDishIds():Observable<string[] | any>{
-    return of(DISHES.map((dish)=>dish.id));
+    return this.httpClient.get<any>(baseURL + 'dishes').pipe(map(dishes => dishes.map(dish=>dish.id)));
   }
 }
