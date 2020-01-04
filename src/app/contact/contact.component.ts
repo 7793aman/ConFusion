@@ -1,18 +1,31 @@
-import { Component, OnInit,ViewChild } from '@angular/core';
+import { Component, OnInit,ViewChild,Inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Feedback, ContactType } from '../shared/feedback'
-
+import {flyInOut,expand} from '../animations/app.animation'
+import {FeedbackService} from '../services/feedback.service';
 @Component({
   selector: 'app-contact',
   templateUrl: './contact.component.html',
-  styleUrls: ['./contact.component.scss']
+  styleUrls: ['./contact.component.scss'],
+  host:{
+    '[@flyInOut]':'true',
+    'style':'display:block'
+  },
+  animations:[
+    flyInOut(),
+    expand()
+  ]
 })
 export class ContactComponent implements OnInit {
 
   feedBackForm: FormGroup
   contactTypes:string[]=ContactType;
   feedBack:Feedback;
-
+  formSubmittedData:Feedback;
+  formSubmitted:boolean=false;
+  toastMessage=false;
+  toastData={}
+  errMsg: string;
   @ViewChild('fform') feedbackFormDirective;
 
 
@@ -43,8 +56,9 @@ export class ContactComponent implements OnInit {
       'email':         'Email not in valid format.'
     },
   };
+  
 
-  constructor(private formBuilder: FormBuilder) { }
+  constructor(private formBuilder: FormBuilder,@Inject('BaseURL') private baseURL,private feebackService:FeedbackService) { }
 
   ngOnInit() {
     this.createForm();
@@ -85,17 +99,28 @@ export class ContactComponent implements OnInit {
   }
 
   onSubmit(){
+    this.formSubmitted=true;
     this.feedBack=this.feedBackForm.value;
+    //handling spinner;
+    this.formSubmittedData=this.feedBack;
+
+    this.feebackService.submitFeedback(this.feedBack).subscribe(
+      (value)=>{
+      
+        this.toastData=value;
+        this.toastMessage=true;
+        this.formSubmittedData=null;
+       
+        setTimeout(()=>{
+          this.toastMessage=false;
+          this.formSubmitted=false;
+        },5000)
+        
+      },
+      (error)=>this.errMsg=error)
     console.log(this.feedBack);
-    // this.feedBackForm.reset({
-    //   firstname:"",
-    //     lastname:  "",
-    //     telnum:0,
-    //     email: "",
-    //     agree: false,
-    //     contacttype: 'None',
-    //     message:''
-    // });
+   
+        
     this.feedbackFormDirective.resetForm();
   }
 

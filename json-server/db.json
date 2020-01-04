@@ -218,5 +218,106 @@
       "description": "Award winning three-star Michelin chef with wide International experience having worked closely with whos-who in the culinary world, he specializes in creating mouthwatering Indo-Italian fusion experiences. He says, Put together the cuisines from the two craziest cultures, and you get a winning hit! Amma Mia!"
     }
   ],
-  "feedback": []
+  "feedback": [
+    {
+      "firstname": "ama",
+      "lastname": "jain",
+      "telnum": "999",
+      "email": "am@gmail.com",
+      "agree": false,
+      "contacttype": "None",
+      "message": "dd",
+      "id": 1
+    },
+    {
+      "firstname": "anad",
+      "lastname": "dafda",
+      "telnum": "98988",
+      "email": "abc@gmil.com",
+      "agree": true,
+      "contacttype": "Tel",
+      "message": "ds",
+      "id": 2
+    },
+    {
+      "firstname": "aman",
+      "lastname": "jain",
+      "telnum": "243553",
+      "email": "aman@gmail.com",
+      "agree": true,
+      "contacttype": "Tel",
+      "message": "jjj",
+      "id": 3
+    },
+    {
+      "firstname": "ama",
+      "lastname": "wdf",
+      "telnum": "88",
+      "email": "a@gmail.com",
+      "agree": false,
+      "contacttype": "None",
+      "message": "h",
+      "id": 4
+    },
+    {
+      "firstname": "aman",
+      "lastname": "jai",
+      "telnum": "24",
+      "email": "a@gmail.com",
+      "agree": true,
+      "contacttype": "None",
+      "message": "jj",
+      "id": 5
+    },
+    {
+      "firstname": "qe",
+      "lastname": "eqer",
+      "telnum": "031",
+      "email": "ad@g.com",
+      "agree": false,
+      "contacttype": "None",
+      "message": "j",
+      "id": 6
+    },
+    {
+      "firstname": "aa",
+      "lastname": "23",
+      "telnum": "1",
+      "email": "a@gmail.com",
+      "agree": null,
+      "contacttype": null,
+      "message": "hj",
+      "id": 7
+    },
+    {
+      "firstname": "aa",
+      "lastname": "we",
+      "telnum": "999",
+      "email": "a@g.com",
+      "agree": true,
+      "contacttype": "None",
+      "message": "kjkj",
+      "id": 8
+    },
+    {
+      "firstname": "aman",
+      "lastname": "jain",
+      "telnum": "9",
+      "email": "a@gmail.com",
+      "agree": true,
+      "contacttype": "Tel",
+      "message": "a",
+      "id": 9
+    },
+    {
+      "firstname": "aa",
+      "lastname": "wew",
+      "telnum": "2312",
+      "email": "a@gmail.com",
+      "agree": false,
+      "contacttype": "None",
+      "message": "jj",
+      "id": 10
+    }
+  ]
 }

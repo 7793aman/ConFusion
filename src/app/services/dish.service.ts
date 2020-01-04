@@ -37,16 +37,12 @@ export class DishService {
   }
 
   getDishIds():Observable<string[] | any>{
-    return this.httpClient.get<any>(baseURL + 'dishes').pipe(map(dishes => dishes.map(dish=>dish.id))).pipe(catchError((error)=> error);
+    return this.httpClient.get<any>(baseURL + 'dishes').pipe(map(dishes => dishes.map(dish=>dish.id))).pipe(catchError((error)=> error));
   }
 
   putDish(dish:Dish):Observable<Dish>{
-
-    const httpOptions={
-      headers:new HttpHeaders({
-        'Content-Type':  'application/json'
-      })
-    }
-    return this.httpClient.put<Dish>(baseURL + 'dishes/' + dish.id,Dish,httpOptions).pipe(catchError(this.httpMessageService.handleError));
+    let headers = new HttpHeaders();
+    headers.append('Content-Type', 'application/json');
+    return this.httpClient.put<Dish>(baseURL + 'dishes/' + dish.id,Dish,{headers:headers}).pipe(catchError(this.httpMessageService.handleError));
   }
 }
