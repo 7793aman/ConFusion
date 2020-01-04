@@ -14,7 +14,7 @@ export class MenuComponent implements OnInit {
 
   dishes: Dish[];
   myService: DishService
-  
+  errMsg:String  
 
   constructor(private dishService: DishService,@Inject('BaseURL') private baseURL) {
     this.myService = dishService
@@ -24,10 +24,10 @@ export class MenuComponent implements OnInit {
     
     this.dishService.getDishes().subscribe(
       (dishes) => {
-        this.dishes = dishes
-      }
+        this.dishes = dishes;
+      },(error)=>{
+        this.errMsg=error;
+      })
 
-    )
   }
-
 }

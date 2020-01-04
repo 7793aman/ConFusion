@@ -36,6 +36,7 @@ import {LeaderService} from './services/leader.service';
 import { LoginComponent } from './login/login.component';
 import {DatePipe} from '@angular/common';
 import {baseURL} from './shared/baseurl';
+import { HighlightDirective } from './directives/highlight.directive';
 
 @NgModule(
   {
@@ -48,7 +49,8 @@ import {baseURL} from './shared/baseurl';
     HomeComponent,
     AboutComponent,
     ContactComponent,
-    LoginComponent
+    LoginComponent,
+    HighlightDirective
   ],
   imports: [
     BrowserModule,
