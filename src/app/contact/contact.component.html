@@ -91,7 +91,7 @@
       <button [disabled]="feedBackForm.invalid" type="submit" mat-button class="background-primary text-floral-white">Submit</button>
     </form>
   </div>
-  <div class="spinner" [hidden]="!formSubmittedData">
+  <div class="spinner" [hidden]="!showSpinner">
     <mat-spinner></mat-spinner>
     <h4>
       Loading . . . Please Wait

@@ -21,7 +21,7 @@ export class ContactComponent implements OnInit {
   feedBackForm: FormGroup
   contactTypes:string[]=ContactType;
   feedBack:Feedback;
-  formSubmittedData:Feedback;
+  showSpinner:boolean=false;
   formSubmitted:boolean=false;
   toastMessage=false;
   toastData={}
@@ -102,14 +102,14 @@ export class ContactComponent implements OnInit {
     this.formSubmitted=true;
     this.feedBack=this.feedBackForm.value;
     //handling spinner;
-    this.formSubmittedData=this.feedBack;
+    this.showSpinner=true;
 
     this.feebackService.submitFeedback(this.feedBack).subscribe(
       (value)=>{
       
         this.toastData=value;
         this.toastMessage=true;
-        this.formSubmittedData=null;
+        this.showSpinner=false;
        
         setTimeout(()=>{
           this.toastMessage=false;
