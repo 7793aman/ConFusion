@@ -1,0 +1,606 @@
+Elevate Payment Partnerships (EPP)
+Disputes Engineering — Complete Project Story
+Braintree Disputes · Arbiter Platform · 2023–2024
+
+Compiled from Confluence space DD — Elevate Payment Partnerships (EPP)
+Source pages: EPP Phase 1, Phase 1B/2, Phase 4, Phase 4 RFC, Engineering Hub, DFM Analysis, Mapping, Refinement, Fiserv PRE Playbook
+ Table of Contents
+1.  Executive Summary
+2.  Background and Strategic Context
+3.  Problem Statement
+4.  The EPP Program — Phase Overview and Timeline
+5.  Phase 1 — Crypto/NFT Merchants (Wells → IPP/Worldpay)
+6.  Phase 1B/2 — High-Risk Merchant Migration (Direct Fiserv)
+7.  Phase 4 — Large Enterprise BT Merchants
+8.  Technical Architecture — EPP Phase 4 RFC
+9.  Data Architecture — Snowflake Integration and Field Mapping
+10.  Engineering Implementation — Team, Sequencing, and Status
+11.  Disputes Reporting Strategy
+12.  Contractual Agreement with Fiserv
+13.  KPIs and Success Metrics
+14.  End-to-End Use Cases and Testing
+15.  Open Questions and Decisions Log
+16.  Blockers, Challenges, and Lessons Learned
+17.  PRE Playbook — Operational Incident Handling
+18.  RDR Fee Waiving and Migration Gaps
+19.  Appendix — DFM Query and Data Analysis
+ 1. Executive Summary
+Elevate Payment Partnerships (EPP) — also known internally as 'Control Our Destiny' (COD) and the 'Bank Independence Program' — was a multi-year strategic initiative at PayPal/Braintree designed to dramatically reduce dependency on third-party banks and payment processors. At its core, EPP was about Braintree acquiring the capability to own and control its end-to-end payments stack: from transaction processing through dispute management, financial events, and merchant reporting.
+The initiative was anchored in two critical business imperatives. First, Wells Fargo — Braintree's primary acquiring bank at the time — had begun limiting the types of merchants it would support, specifically declining to continue servicing crypto, NFT, and high-risk merchant categories. This put Braintree in a vulnerable position where a third party was dictating which merchants it could serve. Second, competitors like Adyen and Stripe were already operating on BIN Sponsorship and self-processing models, giving them vastly superior control, speed-to-market, and operational efficiency.
+The EPP initiative migrated merchants in carefully sequenced phases from the Wells Fargo pipeline onto a new stack built around Fiserv as the processor and Goldman Sachs (later Pathward for high-risk) as the acquiring bank. The Disputes team — specifically the Arbiter platform — was tasked with building a completely new end-to-end integration with Fiserv's dispute management system, covering chargeback ingestion, merchant notification, financial events, representment submission, reporting, and monitoring.
+This document captures the complete story of that work: the why, the what, the how, the blockers encountered, the architectural decisions made, the data analysis performed, and the operational playbooks created along the way.
+ 2. Background and Strategic Context
+2.1 Braintree's Processing Model Before EPP
+Prior to EPP, Braintree processed payments primarily through an ISO (Independent Sales Organization) model, which industry analysts considered a legacy approach by 2022-2023 standards. Under this model, Braintree was fully dependent on third-party acquiring banks and processors for the entire payment lifecycle. The primary bank was Wells Fargo (WFMS — Wells Fargo Merchant Services), and disputes flowed through the Wells CashMan/DFM (Data File Manager) system.
+This dependency created significant constraints. Any product improvement, new merchant capability, or operational change required alignment with and execution by the third-party bank. Latency in dispute file delivery, limited visibility into dispute status, and inability to onboard certain merchant categories were all symptoms of this dependency. When Wells Fargo decided it would no longer support crypto and NFT merchants, it exposed the existential risk of this model: a third party could effectively determine Braintree's addressable market.
+2.2 Competitive Landscape
+The strategic urgency behind EPP becomes clear when viewed against the competitive backdrop. Adyen and Stripe — Braintree's primary competitors in the enterprise payments space — had already moved to a mix of BIN Sponsorships and self-processing models. These companies owned their technical stack end-to-end:
+•	They could go to market in new countries without third-party approval or delays.
+•	Monitoring, support, and remediation of operational incidents could be done proactively.
+•	They could onboard any merchant category they chose to accept.
+•	Their dispute management, reporting, and reconciliation systems were internally controlled.
+Braintree continuing on the ISO model meant an accelerating capability gap versus these competitors. EPP was the answer to closing that gap.
+2.3 The Vision
+The long-term vision of EPP was to create a redundant, scalable, and competitive processing and post-processing platform for Braintree, PayPal, and Venmo merchants. The ultimate north star — beyond the immediate phases — was to connect directly with card schemes (Visa, Mastercard) for both incoming and outgoing dispute events, eliminating the intermediate processor layer entirely for dispute management.
+The intermediate milestone was the Fiserv integration: Braintree would now receive dispute data directly from Fiserv via a Snowflake-based data pipeline (rather than waiting for file drops from Wells), and submit representments directly to Fiserv via their eResponse SFTP mechanism.
+ 3. Problem Statement
+The disputes team documented two core problems that EPP was solving from a disputes management perspective:
+3.1 Third-Party Dependencies
+Braintree, PayPal, and Venmo were highly dependent on third-party acquiring and processing relationships. Items such as latency, product improvements, and post-processing capabilities — including reporting, disputes, and money movement — were contingent on the health and capabilities of those partners. Partners could also limit the types of merchants that Braintree could onboard (e.g., real money gaming, crypto, and other high-risk verticals), directly constraining market share and scope. The Wells Fargo situation with crypto/NFT merchants was the most visible manifestation of this risk.
+3.2 Competitive Disadvantage
+Braintree's ISO model was considered a legacy model by industry standards. Competitors like Adyen and Stripe completely owned their technical stack. They did not rely on — and were not blocked by — third-party processors or banks. This gave them the ability to proactively monitor, support, and remediate operational incidents, and to quickly go to market in new countries and with new product features — advantages Braintree simply could not replicate under the existing model.
+3.3 Dispute-Specific Problems Being Solved
+From a Braintree Disputes perspective, the specific problems EPP aimed to solve included:
+•	Dependency on Wells Fargo's DFM file (delivered daily via SFTP, subject to Wells' SLAs)
+•	No ability to independently control reply-by date calculations or SLA enforcement
+•	Limited transparency into dispute lifecycle updates — Fiserv's Snowflake model offered real-time access vs. Wells' batch file model
+•	Inability to onboard certain high-risk merchant categories, costing Braintree addressable market (e.g., Coinbase, real money gaming)
+•	Financial events (debits/credits to merchants) were dependent on third-party funding pipelines with limited reconciliation visibility
+•	Reporting was fragmented — merchants used multiple SFTP-based custom reports that had known reconciliation issues
+ 4. The EPP Program — Phase Overview and Timeline
+EPP was structured into distinct phases, each targeting a different merchant segment and connection path. Below is the full phase table as documented across the EPP Confluence space:
+Phase	Connection Path	Merchant Impact	Internal Start	Internal End	External Committed
+Phase 1: Crypto/NFT	IPP → Worldpay → Citizen's Bank	BT: 2 Merchants; PP: 4 Merchants; Venmo: 1 Biz Profile	Feb 14, 2023	NFT: Mar 31, 2023 / Crypto: Apr 30, 2023	NFT: Mar 31, 2023 / Crypto: Jun 30, 2023
+Phase 1B: Coinbase (post-pivot)	BT → Fiserv → Pathward	BT: 1 Merchant (Coinbase)	Mar 31, 2023	Jun 30, 2023	Crypto: Jun 30, 2023
+Phase 2: High Risk (~450 BT merchants)	BT → Fiserv → Pathward	BT: ~450 Merchants; PP: ~97K Merchants	Mar 31, 2023	Sep 30, 2023	High-Risk MCCs: Oct 31, 2023
+PPCP Migration	BT SMB Merchants	BT: ~28K Merchants	Aug 1, 2023	—	—
+Phase 3: PP & Venmo SMB	TBD	PP: ~16M Merchants; Venmo: ~953K Merchants	Sep 30, 2023	Jun 1, 2024	Jul 31, 2024
+Phase 4: Remaining BT LE	BT → Fiserv → Goldman Sachs	BT: ~1K Large Enterprise Merchants	Sep 30, 2023	Jun 30, 2024	Oct 31, 2024
+
+4.1 The Post-Pivot (March 31, 2023)
+A critical inflection point was the EPP Pivot of March 31, 2023. Originally, Phase 1B and Phase 2 were planned to go through IPP (PayPal's Instrument Processing Platform) → Fiserv → Pathward. Post-pivot, Braintree moved to integrate directly with Fiserv, cutting out IPP as an intermediary. This had significant implications for the disputes team: instead of receiving dispute data indirectly through IPP's existing file-based mechanism, Braintree would now query Fiserv's Snowflake instance directly. The Phase 1B/2 disputes confluence document was copied from the Phase 4 doc on 5/24/2023 to reflect this new reality.
+4.2 Dual Pipeline Reality (Transition Period)
+A particularly complex aspect of the transition period was that merchants would have disputes on BOTH the Wells pipeline and the new Fiserv/Pathward pipeline simultaneously. Braintree had to continue processing existing Wells disputes with no interruption while also handling new Fiserv disputes for migrated merchants. This dual-pipeline operation required careful strategy engine design to avoid collisions, duplicate dispute creation, and incorrect financial events.
+ 5. Phase 1 — Crypto/NFT Merchants (Wells → IPP/Worldpay)
+5.1 Context and Merchants
+Phase 1 was specifically scoped to migrate three NFT/Crypto merchants off of Wells Fargo Merchant Services (WFMS) onto Worldpay via IPP by end of March 2023. These merchants were:
+Merchant Account Token	Merchant Public ID	Dispute Count (2022)
+coinbaseinc_instant	k7htn4dptfgm95ct	101,937
+PaniniAmerica_instant	5ytry64hrnrsgwnn	10,634
+StockX_NFT	w6vcnykz4pvzrskv	57
+
+Coinbase was by far the largest — with nearly 102,000 disputes in 2022 alone — making it the most operationally complex merchant to migrate. The high dispute volume was driven by the nature of crypto transactions: while cryptocurrency-to-cryptocurrency transfers are irreversible, credit card purchases of cryptocurrency remain fully subject to chargebacks. This creates an inherent asymmetry where the merchant (Coinbase) could disburse crypto that cannot be recovered, yet still face a chargeback on the card side.
+5.2 Dispute Architecture Considerations for Phase 1
+Phase 1 surfaced several dispute-specific considerations that would carry through the entire EPP program:
+•	Evidence submission flow: In addition to the merchant's evidence file, Arbiter generates a 'frontmatter' file to capture transaction details for stronger rebuttal. Questions were raised about IPP supporting multiple evidence files per dispute.
+•	Chargeback lifecycle alignment: Concerns were raised about how chargeback lifecycle events from Worldpay/IPP would align with Wells events, especially for StockX which had disputes on both platforms during the transition.
+•	Dispute financial events: Ensuring debits and credits to merchants were accurately reflected across both pipelines was a critical requirement.
+•	Data for DFR/DFIR reports: The IPP chargeback file frequency and format needed to be confirmed to ensure reporting continuity.
+•	ACH return disputes: It was unclear whether IPP supported ACH return disputes, requiring clarification.
+•	Cutover timing: What would happen to disputes on Wells for transactions that had already moved to IPP? Would IPP support incoming disputes for Wells-originated transactions?
+5.3 Operational Requirements Raised
+A formal requirements table was developed for Phase 1, covering items across two dimensions — Operational Requirements and Functional Requirements. Key items included:
+•	DONE: Access to OP Back Office tool (https://www.omnipaygroup.com/ramtool) for manual evidence submission and retrieval.
+•	OPEN: Worldpay to review chargebacks for validity before passing to Braintree (pre-screening). This was identified as high priority — without it, Braintree would need to 'eat' costs from incorrectly filed chargebacks.
+•	OPEN: Support for expired pre-arbitration auto-acceptance (to prevent progression to arbitration). Existing logic for Wells was already in place.
+•	OPEN: Chargeback spec lacked Visa RDR (Rapid Dispute Resolution) and MasterCard Ethoca alerts — high priority item requiring alternative sourcing.
+ 6. Phase 1B/2 — High-Risk Merchant Migration (Direct Fiserv)
+6.1 Background and Pivot
+Following the EPP Pivot of March 31, 2023, the Phase 1B/2 work shifted from an IPP-mediated integration to a direct Braintree-to-Fiserv integration. Phase 1B targeted a single merchant — Coinbase — as the go-live pilot for the new Fiserv disputes integration. Phase 2 then expanded to approximately 450 identified high-risk merchants that needed to be moved off Wells Fargo.
+6.2 Product Requirements (MVP)
+The MVP for Phases 1B/2 was explicitly defined as 'the features and capabilities that Braintree supports today PLUS the top-priority merchant needs that the new Fiserv interface allows.' The following requirements were marked as must-have for MVP:
+#	Requirement	User Story	MVP?
+1	Data Ingestion	Arbiter needs to ingest dispute data defined by data contract with Fiserv, streamed from Snowflake instance.	YES
+2	Reply By Dates	Merchants need enough time to respond. Arbiter to re-assess reply-by dates based on defined SLA with Fiserv.	YES
+3	Financial Events	Merchants need full transparency into financial events. Arbiter-Funding handshake to charge merchants accurately.	YES
+4	Dispute Updates	Merchants need notification of dispute updates including amount, reason code, and status changes.	YES
+5	Terminal Status	Merchants need to see the terminal (final) status for each dispute.	YES
+6	Reporting Data Contract	Reporting needs to know when dispute data is available to generate DFR and DDR reports.	YES
+7	Internal Data Dashboards	Arbiter stakeholders need to monitor dispute trends. Datadog dashboards with KPIs.	NO
+8	Merchant Data Dashboard	Merchants need visibility into key metrics. Dashboard in Control Panel.	NO
+9	Arbitration Case Creation	Merchants should be able to see arbitration cases filed by issuing banks.	NO
+10	Dispute History	Merchants need full dispute history per case number. (To be revisited.)	NO
+
+6.3 Target Audience
+Phase 1B targeted Coinbase specifically — the highest-volume high-risk merchant and the designated canary for the new integration. Phase 2 targeted approximately 450 identified high-risk BT merchants that had to be moved off Wells, plus ~97,000 PayPal merchants in the same high-risk category.
+6.4 Incremental Data Attributes Added to Arbiter
+A critical piece of work for Phase 1B/2 was defining the new data attributes that would need to be persisted in Arbiter from the Fiserv integration. These were not present in the Wells integration and required both model changes and Snowflake query expansion. The data was organized into two groups:
+6.4.1 Chargeback Group — New Fields
+Field ID	Field Name	Description	Key Questions
+cb_status	Chargeback Status	Status of Chargeback (3 values: Open, Closed, Reversed)	—
+cb_disputeCurrency	Dispute Currency Code	Currency code used for the transaction.	—
+cb_merchantFundingCurrency	Merchant Funding Currency	Currency in which original presentment was funded.	—
+cb_Disposition	Chargeback Disposition	Describing final settlement of a chargeback.	—
+cb_winLoss	Chargeback Win/Loss	Status of dispute: won, lost, or pending.	—
+cb_trackingNumber	Tracking Number	Tracking number of the disputed transaction.	In which cases is this value passed?
+cb_statusDate	Status Date	Date for expected response to the client.	Is this the network due date for representment?
+cb_recurring	Recurring Type	Recurrence type for the transaction.	—
+cb_workType	Chargeback Work Type	Various stages of chargeback resolution.	What are Oploss and Incoming Collections types? What to do with Outgoing cases?
+cb_dispositionDate	Disposition Date	Date of disposition.	—
+cb_category	Category	Categorization of chargeback.	—
+cb_partialAmountFlag	Partial Amount Flag	Flag for partial chargebacks.	Would this be sent in the original dispute record?
+cb_relevanceKey	Relevance Code	Denotes whether chargeback is merchant-visible.	What are the expected values?
+cb_responseReceived	CB Response Received	Chargeback response received indicator.	When would this notice be received?
+cb_dueDate	CB Due Date	Deadline to respond to dispute. Absent = no response required.	—
+
+6.4.2 Retrieval Group — New Fields
+Field ID	Field Name	Description	Key Questions
+r_fulfilmentDate	Fulfilment Date	Date retrieval was fulfilled. Empty if not yet fulfilled.	Does this mean the retrieval is resolved and won't progress to chargeback?
+r_trackingNumber	Tracking Number	Tracking number of disputed transaction.	In which cases is this passed?
+r_status	Retrieval Status	Status of retrieval.	When would we receive a Pending status record?
+r_dueDate	Due Date	Deadline to respond to satisfy a retrieval.	Is this the network due date?
+r_statusDate	Status Date	Date for expected response to client.	What is the difference between r_statusDate and r_dueDate?
+r_retrievalRequestType	Retrieval Request Type	Request type for the retrieval.	—
+
+6.5 E2E Flow and Testing Framework
+The team documented a comprehensive end-to-end flow for Phase 1B/2, with 10 numbered steps covering the complete dispute lifecycle:
+1.	Cardholder initiates dispute — External / Issuer dependency
+2.	Fiserv ingests dispute and provides data in Snowflake. Fiserv cutoff 7PM EST; data ready by 9AM EST the following day. Snowflake 'Trigger' table updated to signal readiness.
+3.	BT Disputes pulls dispute data from Snowflake. Phase 1B: Chargebacks only. Phase 2: Retrievals, Pre-Arbs, Chargebacks. Phase TBD: Arbitrations.
+4.	BT Disputes implements controls to ensure data integrity of records pulled from Snowflake.
+5.	Note: Merchants continue to have disputes on both Wells AND Pathward during transition. BT must process existing Wells disputes with no interruption alongside Pathward disputes.
+6.	Strategies create new disputes and update existing disputes in Arbiter.
+7.	Merchants notified of new cases and updates via emails and webhooks (Sendgrid).
+8.	BT Funding notified to initiate a debit or credit based on the dispute record. Acknowledgement received from Funding.
+9.	Accurate dispute data provided for BT Reporting. Includes Dispute Report (DLR) and Dispute Financial Impact Report (DFIR). Funding handshake signals that dispute data is ready for processing.
+10.	When merchant is ready to respond: evidence curation, validation, and submission to Fiserv. Auto-acceptance for RDR flag disputes. Auto-contestation if refund detected and case value > $30.
+11.	BT monitors submissions to Fiserv via eResponse and receives acknowledgement once representment is processed.
+A formal testing matrix was also defined, covering all components across: Ingestion (Snowflake Trigger Table, Chargebacks Table, Task), Creation (Strategies for Open/Reopen/Win/Lose/PRE), Financial Events (Debit/Credit/Fee), Representment (CP/SDK/GraphQL/Eresponse), and Reporting (CP reports, DFR, DDR, SFTP, Custom).
+ 7. Phase 4 — Large Enterprise BT Merchants
+7.1 Target Audience and Rationale
+Phase 4 targeted the top Large Enterprise (LE) and Mid-size BT merchants — those processing $8M+ in yearly TPV — moving them from Wells Fargo onto Fiserv → Goldman Sachs. The business case for focusing on these merchants was stark:
+•	Top 4% of merchants generate 96% of TPV
+•	Bottom 96% of merchants make up only 4% of TPV
+The remaining 96% of long-tail SMB BT merchants would be migrated to PPCP (PayPal Commerce Platform) rather than the new Fiserv stack.
+Phase 4 merchants were characterized as extremely low-margin merchants whose primary dispute-related goals were: (1) decreasing chargeback ratio to stay below excessive chargeback monitoring program thresholds, (2) protecting revenue through higher win rates, and (3) achieving operational excellence through seamless dispute management. Specific strategies included Dispute Automation, Standardization, Integration with Risk Portfolio products, Dispute Analytics/Data Management, Low-margin Reconciliation, and Cost Optimization.
+7.2 Phase 4 Scale vs. Earlier Phases
+Phase 4 represented a significant step-up in scale and complexity. Rather than 1 merchant (Phase 1B) or ~450 merchants (Phase 2), Phase 4 involved approximately 1,000 of Braintree's largest and most demanding merchants — merchants with teams dedicated to dispute management, sophisticated reconciliation requirements, and very low tolerance for any degradation in dispute handling quality.
+7.3 Additional Requirements for Phase 4 vs. Phase 1B/2
+Phase 4 shared the same core MVP requirements as Phase 1B/2, but added several items that were out-of-scope for earlier phases:
+•	Direct Connect to Card Schemes — Phase 4+ (Out of scope for Phase 4 MVP)
+•	MasterCard Ethoca Alerts — On Fiserv's roadmap for late Q3 2023; out of scope for Phase 4 MVP. Follow-up question: would this be supported for Wells during the transition period?
+•	Arbitration Case Creation — Merchants should be able to see arbitration cases filed by issuing banks (nice-to-have, not MVP)
+•	Dispute History — Full dispute history per case number (nice-to-have, to be revisited)
+7.4 Deprecating Wells Fargo
+A key output of Phase 4 was the full deprecation of the Wells Fargo pipeline. The tentative timeline was that all volume needed to be off Wells by September 30, 2024, after which BT would receive 180 days of residual traffic (including disputes). Post-cutover, the following could be deprecated:
+•	Wells (WFMS) and DFM (Data File Manager) integrations in Arbiter
+•	Visa RDR allowlist logic in Funding (which was originally a Wells-specific workaround)
+•	Any Wells-specific codepaths in strategy engine, runners, and ingest logic
+Importantly, deleting these integrations was designed to NOT impact the ability to view historical Wells disputes, CashMan records, or DFM records.
+ 8. Technical Architecture — EPP Phase 4 RFC
+The EPP Phase 4 RFC (Request for Comment) was authored by Carla Garcia Dimanche (Anchor/Lead Engineer) and represented the definitive technical blueprint for the Fiserv disputes integration. It covered five major subsystems: Ingest, Handling, Representment, Reporting, and the Funding Handshake. The RFC also proposed two architectural improvements — splitting ingest from handling and enabling preemptive transaction lookup — that would benefit the integration long-term.
+Jira Epic: DTBTCD-1169. Related components: Arbiter, Gateway, Funding, Reporting, Airflow, Datalake.
+8.1 Ingest Architecture
+8.1.1 Data Source Decision
+A key early decision was the data source for Fiserv dispute records. Two options were evaluated: (1) Connect directly to and query Fiserv's Snowflake instance, or (2) receive a CLX (ClientLine) file likely via SFTP. The decision was to use Snowflake, with the critical architectural note that Arbiter would NOT connect directly to Snowflake. Instead, a Snowflake task would query the Fiserv data and copy the results to an S3 bucket, which Arbiter would then read from. (The original plan for direct Snowflake connectivity was marked as CANCELLED in the engineering hub — EM was originally going to create application credentials.)
+8.1.2 Snowflake to S3 Pipeline
+The Snowflake pipeline worked as follows: On date D, a Snowflake task queries for all chargeback records with an upd_dt (status_date) of D-1, copies results to S3 bucket bt-production-arbiter-processor-files/fiserv/chargeback/<status_date>/, and Arbiter's FileProcessor then reads and processes that file. The Snowflake task and procedure were defined in the snowflake-terraform repo.
+Snowflake environments:
+Environment	Snowflake Share	Purpose
+Production (Goldman/Pathward)	FISERV_FISERVGBSPROD_PPDEBIT_SHARE.PPFISERV	Production data for Phase 4 and Phase 1B/2
+Dev/QA (Wells data)	FISERV_FISERVGBSPROD_PPDEBIT_SHARE.BRAINTREE	Test share using Wells data for development
+Snowflake UI	braintree.snowflakecomputing.com/console	Direct query access; credentials from EM David Miller
+
+8.1.3 Ingest Runner Design
+The Fiserv::ProcessorRecordIngestRunner was designed to be kicked off by a cron job daily. It orchestrates: calling Fiserv::Client to retrieve records → iterating through records → building Fiserv::ProcessorRecord objects → persisting to the fiserv_processor_record table in Arbiter's DB → either triggering Gateway TransactionLookupEvent or queueing HandleProcessorRecordJob.
+Model validations were required in accordance with expected data shape. Any record with missing or unexpected data would raise a ProcessorRecordException (PRE). Separate models and DB tables were needed for retrieval records vs. chargeback records since they are separate entities in Fiserv's Snowflake.
+8.2 Splitting Ingest and Handling
+A key architectural improvement proposed in the RFC was to cleanly separate processor record ingest from handling. Prior to this work, ingest and handling occurred inline in a single runner. The new design:
+12.	Ingest Runner retrieves records, creates/persists ProcessorRecord objects
+13.	For each record: either triggers Gateway transaction lookup OR queues HandleProcessorRecordJob
+14.	Gateway transaction lookup response processed via ArbiterDisputeMessageService → queues HandleProcessorRecordJob
+15.	HandleProcessorRecordJob passes record to HandleProcessorRecordService for full handling
+This separation moved ingest, transaction lookup, and handling into separate workers, improving performance and operational clarity. The improvement would benefit all processor integrations, not just Fiserv.
+8.3 Preemptive Transaction Lookup
+The RFC also proposed cutting over to preemptive Gateway transaction lookup for Fiserv disputes. Under the old (non-preemptive) model:
+•	Open processor record arrives → Arbiter creates a Dispute in pending state (internal only, not visible to merchants)
+•	Arbiter kicks off Gateway transaction lookup
+•	Gateway returns transaction info → pending Dispute transitions to open state and becomes visible
+Under preemptive transaction lookup:
+•	Ingest kicks off Gateway transaction lookup BEFORE handling the open processor record
+•	When Gateway returns transaction info → Arbiter creates Dispute directly in open state
+•	Dispute is immediately visible to merchants with all necessary information
+•	No confusing 'pending' state ever exists
+Two known gaps in the existing preemptive transaction lookup implementation needed to be resolved before cutover:
+16.	Auto-acceptance evaluation logic was not in place for preemptive flow. Needed to be added in DisputeBuilder — feasible because preemptive disputes are created in open state and can immediately transition to auto-accepted.
+17.	Open processor records for escalated cases (open chargeback-with-retrieval or open pre-arbitration) don't undergo Gateway transaction lookup (info already retrieved). This meant open notifications weren't being created for these Disputes. Root cause: notification creation was skipped in DisputeBuilder for preemptive lookup Disputes because certain attributes aren't available until transaction lookup completes. Solution: persist dispute attributes from Gateway response on the TransactionLookupEvent so they can be accessed in DisputeBuilder without needing a live lookup.
+8.4 Handling — Strategy Engine
+The strategy engine was the heart of Arbiter's dispute processing. For the Fiserv integration, four handling flows were defined:
+Flow	Trigger	Key Actions
+Open record — new case	Open retrieval OR open chargeback with no prior retrieval	Transaction lookup → Create Dispute (open) → Evaluate auto-acceptance → Create notifications → Send financial events to Funding
+Open record — escalated dispute	Open chargeback-with-retrieval OR pre-arbitration	No transaction lookup needed → Same as above (lookup already done for prior lifecycle stage)
+Win or loss record	Terminal status record for existing dispute	No lookup → Transition dispute to won/lost → Create won/lost webhook → Send financial events to Funding
+Update record	Non-terminal update for existing dispute	No lookup → Update dispute details (reason, amount, etc.) — no terminal state change
+
+Required strategy classes: Fiserv::CreateRetrievalStrategy, Fiserv::CreateChargebackStrategy, Fiserv::WinDisputeStrategy, Fiserv::LoseDisputeStrategy, Fiserv::UpdateDisputeStrategy, and a no-op strategy for unactionable records. PREs would be raised for any record where no strategy or multiple strategies matched.
+A shadow dispute mechanism was also built: before go-live, the team could run Fiserv shadow strategies against real Fiserv records to validate behavior without creating live disputes for merchants. This allowed identification of strategy gaps, PRE patterns, and common lifecycle sequences before full cutover.
+8.4.1 Visa RDR (Rapid Dispute Resolution)
+An important nuance in the handling logic was Visa RDR. RDR disputes are automatically resolved by Visa before a chargeback is formally filed. Under the Wells integration, the team had implemented a blanket allowlist approach: all Visa chargebacks for merchants on the RDR allowlist had fees waived. The Fiserv integration enabled a more granular approach: the pre_dispute_program field on ArbiterDisputeMessages could be used to waive fees on a dispute-by-dispute basis, rather than a blanket per-merchant waiver. This logic would live in both Funding and Pricing teams.
+8.5 Representment Architecture
+When merchants submit evidence for a dispute (or when auto-submission is triggered), Arbiter needed to submit that evidence to Fiserv. The design leveraged the existing Wells/FirstData representment architecture:
+•	Fiserv::EvidenceSubmissionService created to handle evidence compilation and submission via SFTP to Fiserv's eResponse mailbox. Fiserv confirmed BT would use existing mailbox NAGW-XBMDK006 with transmission job RCDMBPSS. A new eResponse Group ID would be assigned.
+•	Fiserv::DisputeAcceptanceService for cases where merchants choose to accept a dispute rather than fight it. Acceptance method: Dispute::AcceptanceMethod::FIRST_DATA_VIA_FDR.
+•	DisputesReadyToExpireQuery and ExpiredRunner: if a merchant hasn't responded by the reply-by date, the dispute is transitioned to expired. Auto-submit logic for qualifying Fiserv disputes (refunded, amount > $30) was added to ExpiredRunner — mirroring existing Wells behavior.
+•	DisputesReadyToLoseQuery and LostRunner: if a dispute hasn't reached terminal state after a specified period, it's transitioned to lost. Note: Fiserv confirmed all disputes eventually receive terminal status records via Snowflake, so this was primarily a safety net.
+•	Evidence recommendations CSV was audited and updated for Fiserv reason codes via a mapping exercise.
+8.6 Funding Handshake
+A key requirement for the integration — and for enabling the reporting team to generate accurate daily reports — was implementing a 'Funding Handshake': a signal that ingest and handling for the day was complete and that financial events had been reconciled.
+The design was a Datalake view (implemented via an Airflow DAG) that told Reporting four things:
+18.	Is the day's processing file completed?
+19.	Do the number of financial events in Arbiter and Funding match?
+20.	Do the amounts of financial events in Arbiter and Funding match?
+21.	Are there any unresolved PREs for the day's records?
+This was modeled after a similar approach used by the Pricing team. The Datalake was chosen over EDL/BigQuery because migration to EDL would be a long process and the Pricing team was only pushing for BigQuery to support BFIT consumers. The team could proceed with Datalake for the foreseeable future.
+8.7 Monitoring Strategy
+The team designed a comprehensive monitoring approach using Datadog (with version-controlled dashboards), the Disputes Panel, and Splunk. Key desired metrics:
+•	How long does ingest take? Are records available at the expected time?
+•	How long does Gateway transaction lookup take?
+•	How long does Funding acknowledgement of financial events take?
+•	How long does representment take? How long does Fiserv's ACK of representments take?
+•	Errors across entire flow: ingest runner failures, HandleProcessorRecordJob failures, PRE rates, EvidenceSubmissionJob/DisputeAcceptanceJob failures
+Specific Jira tickets were created to: add Fiserv as a source to the Disputes Panel, fix PRE access in the Disputes Panel, and build a Datadog dashboard covering all EPP KPIs.
+8.8 Sprint Sequencing
+The RFC included a detailed sprint sequencing plan:
+Workstream	Component	Sprints
+WS1	Snowflake Integration (SPIKE: connect to Fiserv Snowflake, POC integration test)	1
+WS2	Transaction Details, TransactionBuilder, TransactionFinder	1
+WS2	ProcessorRecord model(s), ProcessorRecordBuilder(s) — MVP: Chargebacks only	1
+WS1	Fiserv::Client	1
+WS3	ProcessorRecordIngestRunner + cron job + rake task	1
+WS1	Preemptive Txn Lookup: persist dispute attributes on TransactionLookupEvent, DisputeBuilder updates	1
+WS?	Audit/eliminate redundant Gateway::DisputeProducer calls + produce_to_kafka calls	1
+WS3	Strategy Engine: CreateChargeback, WinDispute, LoseDispute, UpdateDispute + Shadow strategies	2
+WS3	Representment: EvidenceSubmissionService, DisputeAcceptanceService, ExpiredRunner logic	1
+—	Buffer sprints	2
+—	TOTAL	~12
+
+ 9. Data Architecture — Snowflake Integration and Field Mapping
+9.1 The DFM (Data File Manager) and Snowflake
+Fiserv's dispute data was originally delivered to partners via a DFM (Data File Manager) file — a CSV/structured file containing chargeback records. For the EPP integration, Fiserv exposed this data via a Snowflake share instead, allowing for more timely access and direct querying. The table was CHARGEBACK_PPFISERV_V1 (later CHARGEBACK_PPDEBIT_V1 for the Pathward/Goldman scope).
+9.2 DFM Data Analysis — Dispute Lifecycle Research
+Before building the integration, the team did significant data analysis on historical Coinbase dispute records from 2022 (via the Wells CashMan database) to understand the range of dispute lifecycle patterns they would need to handle. In 2022 alone, 21 different dispute lifecycle sequences were observed for Coinbase.
+Three major patterns were documented and questions sent to Fiserv (via Tyler Baldwin, FiServ Research and Business Analysis Professional):
+22.	82,689 cases had the sequence: [Credit to merchant / Dispute Amount debit] → Open a dispute. Question: Should these cases expect a close event at some point? (Needed to verify records hadn't had close events outside the query time boundary.)
+23.	17,691 cases had the sequence: [Credit to merchant / Dispute Amount debit, STATUS MOVED TO CLOSED] → Open a dispute, Update dispute to merchant liable (lost). Tyler confirmed: this is the last update if BT doesn't provide evidence/representment. If BT provides evidence after due date, another status update would be provided.
+24.	21 cases had the sequence: [STATUS MOVED TO CLOSED] with no prior OPEN chargeback notice. Question: should there have been an open update first?
+9.3 Daily Volume Analysis
+To plan infrastructure capacity, the team ran queries against Coinbase's daily dispute update volumes. This analysis was critical for sizing the Snowflake task, S3 storage, and Arbiter processing capacity.
+9.4 Field Mapping: CHARGEBACK_PPFISERV_V1 → Arbiter Protocol
+A detailed field mapping exercise was performed to map Fiserv's raw Snowflake column names to Arbiter's internal dispute model (the Protocol). Below is the complete mapping for chargebacks:
+Fiserv Field (CHARGEBACK_PPFISERV_V1)	Arbiter Protocol Field	Status / Notes
+Determined if Adjustment Amount credit received	amount_won	DONE
+Chargeback Amount (orig_dsput_amt)	amount_disputed	DONE
+IDS Case Number (alt_dsput_id)	case_number	DONE
+Due Date (dspn_resp_due_dt)	effective_date	DONE
+Dispute::EvidenceSubmissionMethod::FIRST_DATA_VIA_FDR	evidence_submission_method	DONE
+Adjustment Amount present?	financial_movement?	TODO - See notes
+Adjustment Amount (debit/credit sign)	financial_movement_amount	TODO - Few different currency options
+chargeback_currency_code	financial_movement_currency	TODO — confirmed should use chargeback_currency_code (CB may be in different currency than original txn)
+Adjustment Date	financial_movement_date	TODO — Adjustment Date? Or rely on Funding?
+Invoice Number (invoice_no) .lower	gateway_transaction_public_id	DONE
+Dispute Type = Chargeback	kind	DONE
+<gw-txn-lookup>	merchant_account_unique_id	DONE
+<gw-txn-lookup>	merchant_public_id	DONE
+Location ID (siteid)	processor_merchant_id	DONE
+Due Date (dspn_resp_due_dt)	processor_reply_by_date	DONE — default shaves 3 days; confirmed OK by Fiserv
+ARN (acqr_ref_no)	processor_transaction_identifier	DONE
+Dispute Reason Code (dsput_rsn_cd)	reason_code	DONE
+Dispute Reason (m4.fild_valu_tx)	reason_description	DONE
+Received Date (dsput_rcvd_dt)	received_date	DONE
+ARN (acqr_ref_no)	reference_number	DONE
+Processed Currency Description	settlement_currency_iso_code	DONE
+Hardcoded: 'fiserv'	source	DONE
+
+9.4.1 Open Mapping Questions and Resolutions
+Priority	Component	Description	Status	Resolution / Notes
+High	Model/Product	financial_movement_currency — need to figure out currency. Fields: chargeback_currency_code, processed_currency_code.	RESOLVED	Use chargeback_currency_code as CB may be in different currency than original txn.
+High	Model/Product	merchant_reply_by_date — default shaves 3 days from processor_reply_by_date. Is this OK?	RESOLVED	Yes, confirmed by Fiserv.
+High	Ingest/Engineering	Delimiter: using ';' for CSV because ',' caused parsing issues with escaping.	DONE	Switched to semicolon delimiter.
+Medium	Model/Product	show_disbursement_date? — hardcoded to true. Will these disputes be included in DFIR?	RESOLVED	Yes, should be true; disputes appear in DFIR.
+Medium	Model/Product	What is request_date? Description only says 'Request date'.	TODO	Would need Tyler to confirm. Do we need it for anything?
+Medium	Ingest/Engineering	Need ChargebackBuilder. Need dbdo for schema changes.	IN PROGRESS	—
+Medium	Ingest/Engineering	Refactor Stored Procedure — manual work required across all queries for testing.	TODO	—
+Medium	Model/Product	What is expiration_date? Values appear to be MMDD format.	TODO	Not in specs; would need Fiserv engagement. Is it needed?
+Medium	Model/Product	How do partial credits work?	TODO	Per Slack thread: Wells provided credit but case shouldn't have closed. Via Snowflake, can we identify partial credit ≠ terminal status?
+
+9.5 DFM SQL Query (Fiserv's Internal View)
+The team also obtained and documented the actual SQL query Fiserv uses internally to build the DFM file from their braintree.chargeback_bt_v1 source table. This was valuable for understanding the full data universe available, even if not all fields were consumed by Arbiter. Key fields in the query included: siteid (Location ID), store_nr, mccd (SIC Code), extr_id (External MID), adj_dt (Funded Date), lctn_dba_nm (Location DBA Name), dspn_curr_cd (Chargeback Currency Code), orig_dsput_amt (Chargeback Amount), dsput_rsn_cd (Dispute Reason Code), alt_dsput_id (IDS Case Number), dspn_resp_due_dt (Due Date), acqr_ref_no (ARN), chargeback_cycle, invoice_no, adj_amt (Adjustment Amount), and pre_dsput_flag (Pre-Dispute Flag), among 50+ total fields. The query joined against a metadata_v1 table to decode enumerated values (e.g., cb_status, cb_Reason, cb_authNetwork).
+ 10. Engineering Implementation — Team, Sequencing, and Status
+10.1 Core Team
+Name	Role	Contact
+Carla Garcia Dimanche	Anchor/Lead Engineer — EPP Disputes	cgarciadimanche@paypal.com / Slack
+Roberto (Rob) Torres	Disputes Tech Lead	robetorres@paypal.com / Slack
+David Miller	Disputes Engineering Manager	dmiller2@paypal.com / Slack
+Edita Sahakyan	Product Manager	esahakyan@paypal.com / Slack
+Michael Scrivner	Product Manager	mscrivner@paypal.com / Slack
+Aman Jain	Product Manager (Disputes/Reporting alignment)	ajain13@paypal.com
+Jyothi Srirangam	Reporting/Disputes alignment	—
+Neil Openshaw	Principal Engineer — E2E Disputes Testing Facilitator	nopenshaw@paypal.com / Slack
+Tyler Baldwin	Research & Disputes Business Analysis Professional (FiServ)	tyler.baldwin@fiserv.com
+Brandy Wood	FiServ Product	Question Log + external meetings
+Jessica Petrilik	Account Manager Post Production/Operations — PayPal/BT (Fiserv)	jessica.petrlik@fiserv.com / 304.901.0279
+Jim	Fiserv Relationship Manager	—
+
+10.2 MVP Sequencing and Status (as of October 2023)
+Seq	Component	Sprint Estimate	Status
+1	Preemptive Transaction Lookup	1	BLOCKED — Note: may be able to proceed without this.
+2	Snowflake Integration	1	DONE
+3	Processor Record Modeling	2	DONE
+3	Ingest Runner	2	DONE
+4	Strategy Engine + Merchant Cutover	3	IN PROGRESS
+3	Representment	1	DONE
+—	TOTAL	10 sprints	—
+
+The Preemptive Transaction Lookup was marked BLOCKED with a note that the team might be able to proceed without it. The Strategy Engine + Merchant Cutover work was the active workstream as of the last update to the engineering hub (October 2, 2023).
+10.3 Implementation Epic
+The implementation was tracked under Jira Epic DTBTCD-1259. The original Phase 4 RFC was under Jira Epic DTBTCD-1169.
+10.4 Go-Live Merchant Configuration
+The first merchant to go live on the Fiserv integration was Coinbase, with the following configuration:
+Parameter	Value
+Merchant	Coinbase
+merchant_public_id	k7htn4dptfgm95ct
+merchant_account_token	coinbaseinc_instant
+merchant_account_unique_id	gfnd54j
+Current MID (Wells)	445488342996
+location_dba_name	COINBASE, INC.
+
+10.5 Refinement Notes — Code Changes and Test Cases
+During development, the team maintained detailed refinement notes documenting specific code changes and testing approaches:
+10.5.1 Code Changes Made
+•	Dropped adjustment_amount_sign and submitted_transaction_amount_sign columns — did not exist in Snowflake schema.
+•	Removed pos_entry_mode from Snowflake query — not being used by Arbiter.
+•	(Reverted) Converting amounts to integer cents — strikethrough in notes, indicating this was deprioritized.
+10.5.2 Happy-Path Test Case
+The defined happy-path test case used Snowflake record with:
+•	case_number: 231533656601
+•	status_date (record last updated): 6/4/23
+•	dispute_type: Chargeback
+•	chargeback_status: Open
+•	request_type: F
+•	adjustment_amount: Negative
+•	adjustment_date: 6/5/23
+10.5.3 PR-Level Engineering Discussions
+A number of architectural questions were opened in code review that carried forward as deferred work items:
+•	Consider removing strategy-name arrays and using namespace/directory structure instead (PR #3125).
+•	Avoid stubbing out subject methods in tests (PR #3125).
+•	Consider adding custom RSpec matcher like column_a.is_mapped_to(:column_b) (PR #3125).
+•	Revisit usage of subject vs let vs before blocks in Fiserv::Chargeback spec (PR #3125).
+•	Memoize methods on DisputeFinder; revisit DisputeFinder constraints in general (PR #3134).
+•	Potential unhappy paths: correcting a Won dispute to Lost, or Lost to Won — no strategy existed for these (PR #3134).
+•	Should we prevent seemingly duplicate chargebacks from being created?
+•	Deferring 'is found by ProcessorRecordStrategies' shared example — adding it caused many existing tests to fail.
+ 11. Disputes Reporting Strategy
+Disputes reporting was one of the most complex and dependency-heavy workstreams in EPP. Aman Jain and Jyothi Srirangam (Reporting) were specifically called out in the product documents as key stakeholders to align on this plan. The strategy was built around a deliberate short-term/long-term approach, acknowledging that the ideal end-state (DDR and DFR replacing all legacy reports) could not be achieved in lockstep with EPP merchant migrations.
+11.1 Report Landscape
+Five reports were in scope:
+•	Dispute Financial Impact Report (DFIR) — Control Panel distribution; reports all financial events throughout dispute lifecycle; limited to Braintree-funded merchants. Grey color code.
+•	Disputes Lifecycle Report (DLR) — Control Panel distribution; details all stages of dispute lifecycle; merchants use it to track disputes; available to BT-funded and bank-funded cohorts. Yellow color code.
+•	Disbursement & Fee Report (DFR) — SFTP distribution; used by merchants for disbursement and fee reconciliation; includes bank transfer records with payments, disputes, and fees. Blue color code.
+•	Disputes Details Report (DDR) — SFTP distribution; reports all new disputes and updates; dynamic, D+1 SLA; as of 3/2023 only available to Amazon (Venmo) and Booking.com (DCC). Green color code.
+•	Disputes SFTP Reports — SFTP distribution; multiple custom variants per merchant (Uber alone had 18 different reports in US); D+2 SLA; known reconciliation issues since merchants use these to infer money movement. Red color code.
+11.2 Phase-by-Phase Reporting Plan
+Report	Currently Available	Phase 1B/2	Phase 4	Phase 4+
+DFIR (Control Panel)	YES — but falls apart for LEs (paginated API requests time out for large merchants)	CONTINUE — DFR not yet available in CP	CONTINUE — DFR not yet available in CP	DEPRECATE — replaced by DFR in Control Panel. No ETA from Reporting.
+DLR (Control Panel)	YES — same LE timeout issue as DFIR	CONTINUE — DDR not yet in CP	CONTINUE — DDR not yet in CP	DEPRECATE — replaced by DDR in Control Panel. No ETA from Reporting.
+DFR (SFTP)	YES — only Uber, Meta, Microsoft as of 3/2023. 10 LEs in pipeline.	NOT APPLICABLE — no Phase 1B/2 merchants use DFR	ROLL OUT — Reporting to roll out DFR to Phase 4 merchants	EXTEND to Control Panel
+DDR (SFTP)	LIMITED — Amazon (Venmo), Booking.com (DCC) only. Confirmed by Jyothi: actually available to all merchants via SFTP.	CONTINUE — available to all merchants	ROLL OUT — Reporting to roll out DDR to Phase 4 merchants	EXTEND to Control Panel
+Disputes SFTP Reports	YES — has reconciliation issues; merchants use to infer money movement	NO CHANGE for 1B/2	DEPRECATE — DDR to replace all	—
+
+11.3 Known Reporting Issues
+•	LE Control Panel Reports Timeout: For large enterprise merchants, the Gateway makes hundreds of thousands of paginated API requests to Arbiter to generate DFIR and DLR. This can take over the one-hour job limit, causing timeouts and report generation failures. This was a known issue that EPP would not solve short-term — merchants would continue to use SFTP reports as the workaround.
+•	SFTP Report Reconciliation Issues: Merchants were using Disputes SFTP reports to infer money movement, but dispute history events were inherently unreliable for financial events because not all financial events are tied to a status change. Uber had 18 different custom SFTP report variants in the US alone — these were owned by the Reporting team and largely invisible to the Disputes/Arbiter team.
+•	DFR Coverage Gap: DFR — the long-term replacement for all reconciliation reporting — was only available to 3 merchants as of March 2023 (Uber, Meta, Microsoft). 10 more were in the pipeline. Rolling it out to all EPP Phase 4 merchants was Reporting's responsibility and had no firm ETA for Control Panel extension.
+11.4 Reporting Data Contract
+Establishing a formal data contract with the Reporting team was a must-have MVP requirement for all EPP phases. The contract defined when dispute data was available for Reporting to generate DFR and DDR, and was part of the broader Funding Handshake discussed in the RFC section. This work was related to the 'Pinless LE Disputes' scope which was scheduled to complete before EPP's MVP launch.
+ 12. Contractual Agreement with Fiserv (First Data)
+The contractual framework with Fiserv (operating under the First Data brand for dispute services) defined the service levels and obligations that underpinned the technical design. Four key contractual commitments were documented:
+25.	Full Chargeback Process Support: Under the Full Chargeback Process model, First Data supports the entire dispute management process — including pre-screening disputes before passing them to PayPal/BT, reviewing company responses by the Network due date, and managing chargebacks, retrievals, and exceptions (Pre/Arbitration, Pre/Compliance, Pre/Collections).
+26.	Timely Data Delivery: As soon as First Data receives retrieval requests or chargebacks 'in good order' from the issuer, First Data provides all information in the Data File Manager and forwards it to BT in the next DFM report.
+27.	24-Hour Delivery SLA: All incoming retrieval and chargeback cases will be delivered to BT within 24 hours of First Data receiving a complete issuing bank documentation package.
+28.	24-Hour Representment Processing SLA: All incoming retrieval and chargeback representments will be sent to the applicable card network within 24 hours of receipt from BT.
+12.1 SLA Clarifications Obtained
+Several clarifications on the SLA were obtained through the Fiserv question log:
+•	Chargeback processing runs 5 days a week (Monday–Friday) and data is available at approximately 6PM PT each processing day. (Clarified: calendar vs. business days.)
+•	MasterCard Ethoca alert support would be available starting the 3rd weekend of August 2023. Fiserv to share specs of how this would appear in the files once available.
+•	Network Due Dates would NOT be included in the data file — BT would only see the BT merchant file due date. Obtaining network due dates would require a separate product team request.
+ 13. KPIs and Success Metrics
+A comprehensive KPI framework was defined for the Fiserv integration. The goals were: (1) create an analytical basis for informed product and technical decisions, and (2) surface appropriate metrics to merchants for efficient dispute management and transparency.
+#	KPI	Parameter	Description	Target	Merchant Facing?
+1	Chargeback Count (CC)	Count per type (retrieval, chargeback, pre-arb, arbitration, etc.) and Count per reason code (fraud, unauthorized, credit not processed, duplicate, etc.)	Total number of disputes for a given period broken down by type and reason	—	YES
+2	Chargeback Ratio (CBR)	—	Chargeback count compared to total transaction count for the same period	—	YES
+3	Conversion Rate (CR)	retrieval→chargeback, chargeback→pre-arb, pre-arb→arbitration	Conversion from one lifecycle stage to the next	—	NO
+4	Response Rate (RR)	Per type (retrieval, chargeback, pre-arb)	Responded disputes as % of Chargeback Count for that type	—	NO
+5	Expiration Rate (ER)	Per type (retrieval, chargeback, pre-arb)	Expired disputes as % of Chargeback Count for that type	—	NO
+6	Chargeback Disbursement Rate (CBDR)	—	Successfully disbursed financial events vs. total financial events	100%	NO
+7	Ingestion Rate (IR)	Per source	New processor records vs. Chargeback Count	100%	NO
+8	Representment Rate	Per endpoint	Successfully submitted representments vs. total disputed disputes	100%	NO
+9	SLA Success Rate	Per type	Count of broken SLAs	100% (0 broken)	NO
+
+ 14. End-to-End Use Cases and Testing
+14.1 Phase 1B Testing Scenarios
+The team defined five categories of E2E testing scenarios for Phase 1B:
+14.1.1 Dispute Ingestion (Disputes ↔ Fiserv/Snowflake)
+•	Trigger table validation: Is the trigger table confirmed before kicking off ingestion?
+•	Expected: Trigger table status validated prior to ingest. When not ready, proper alerts raised.
+•	S3 pull: BT successfully pulls all necessary chargeback records for the day.
+•	Expected: If pull fails, proper alerts are raised.
+14.1.2 Dispute Strategies (Disputes)
+•	Net-new disputes are created upon ingestion.
+•	Existing disputes are updated to: Open (if applicable), Won, or Lost.
+•	Records that cannot be matched to a strategy result in PREs.
+•	Question documented: How do we anticipate PREs being handled? How do we proactively reduce them?
+14.1.3 Merchant Notifications (Disputes ↔ Sendgrid)
+•	Email and webhooks sent for new disputes and status updates — at minimum parity with existing Wells behavior.
+•	When Emails or Webhooks fail to send, proper alerts are raised.
+14.1.4 Financial Events (Disputes ↔ Funding)
+•	Funding initiates credit or debit as appropriate (debit on CB open, credit on won).
+•	If a partial credit is received: behavior to be defined.
+•	BT fee successfully charged.
+•	Phase TBD: Handshake/proactive reconciliation with Funding for reporting purposes.
+14.1.5 Reporting (Disputes ↔ Reporting)
+•	Dispute data populated and accurate in CP-owned reports: Dispute Report (DLR) and DFIR.
+•	Dispute data populated in Reporting-owned reports: DFR, DDR, SFTP reports, custom reports.
+•	Question: What additional controls can we implement beyond the Funding handshake to ensure reporting accuracy?
+14.2 Shadow Testing Strategy
+Before the integration went live for any merchant, the team implemented a shadow testing approach: Fiserv::Shadow strategies were run against real Fiserv records to create ShadowDisputes without surfacing them to merchants. This allowed the team to:
+•	Use progression queries to identify common sequences of strategies applied to records
+•	Identify common reasons for PREs before go-live and address strategy gaps proactively
+•	Validate that the integration handled the full range of Coinbase's dispute lifecycle patterns
+•	Build confidence in the strategy engine before cutting over production traffic
+ 15. Open Questions and Decisions Log
+15.1 Product/Business Questions
+The following questions were formally documented across the EPP Phase documents as open at various points in time. They represent the real-time uncertainty the team was navigating:
+•	Would we be able to link dispute records with corresponding money movement and pass-through fees based on processor data?
+•	What are the implications of NOT issuing a conditional debit for open chargebacks and instead debiting merchants on chargeback lost? (Impact to Funding? Approvals needed from Treasury?)
+•	Can the issuer's letter be shared with the merchant? Are there security implications?
+•	What are the evidence requirements for Enterprise in-Store disputes?
+•	What is the impact of Phase 4 on branded disputes (Pay with Venmo, Pay with PayPal)? And Amex Direct?
+•	Should we have a Closed status for retrievals? (To be confirmed when specs arrived.)
+•	What dispute tools are accessible in Fiserv's back-office system? (Resolved: DisputeManager User Guide was obtained.)
+15.2 Engineering Design Questions (from RFC)
+•	Should retrieval and chargeback records be modeled separately? (Answer: Yes, they are separate entities in Snowflake.)
+•	Should Fiserv::Client query both Snowflake tables in one run or separate runs?
+•	Should we have a separate worker for receiving, persisting, and uploading processor files to S3?
+•	Can we confidently mark processor files as completed if we don't know the outcome of handling all records?
+•	Do we want every runner to use the TransactionLookupEventService directly?
+•	How do we want to handle partially refunded disputes? (Referenced Slack thread discussion.)
+•	Do we want to modify the shape of ArbiterDisputeMessage to avoid sending unneeded info to Gateway?
+•	What are the implications for Chargeback Protection? (Noted positive: can avoid creating financial events for protected disputes since protection info would be available earlier.)
+•	What are the implications if we deprecate the Pending status for Reporting? (To be discussed with Reporting team.)
+•	Do we want to remove Pending status entirely or preserve it for historical records?
+•	What timeframe can we transition disputes to Lost if no terminal record arrives from Fiserv?
+•	Can we test in QA environment?
+•	How long can we use the Datalake before it is deprecated and we must migrate to EDL/BigQuery?
+15.3 Fiserv-Specific Questions (from Question Log)
+•	How are chargeback updates represented in the file? (Status changes, amount changes, reason code changes?)
+•	How can chargebacks be linked to their corresponding financial events and fees?
+•	What is the plan for supporting MasterCard Ethoca alerts? (Resolved: August 2023 weekend.)
+•	Are these calendar or business days for SLA? (Resolved: M-F, ~6PM PT.)
+•	Network Due Dates — will they be in the data file? (Resolved: No. BT merchant due date only. Network due dates require separate product team request.)
+ 16. Blockers, Challenges, and Lessons Learned
+16.1 Preemptive Transaction Lookup — Persistent Blocker
+One of the most persistent blockers throughout the EPP program was the incomplete state of Preemptive Transaction Lookup. This architectural improvement was identified as Sequencing Step 1 in the engineering plan but was marked BLOCKED as late as October 2023. The team documented two known gaps that needed resolution before cutover: the missing auto-acceptance logic and the broken notification flow for escalated disputes. The workaround was to potentially proceed without it, accepting the operational complexity of the pending Dispute state during the integration period.
+16.2 Snowflake Architecture Pivot
+The original design called for Arbiter to connect directly to Fiserv's Snowflake instance using application credentials (to be created by EM David Miller). This was ultimately cancelled. Instead, the architecture shifted to a Snowflake task that runs on Fiserv's side and copies data to S3 for Arbiter to consume. This pivot likely simplified operational security (no direct Snowflake credentials in Arbiter's production config) but required additional work to define and deploy the Snowflake task infrastructure in the snowflake-terraform repo.
+16.3 Weekend Adjustment Data Edge Case
+After the integration went live, an operational issue was discovered involving dispute records received on weekends. Specifically, when Fiserv processed status updates after their adjustment cutoff on Fridays, those records would arrive in Snowflake with an updated upd_dt but stale or null adjustment data (adj_dt and adj_amt). This caused PREs in Arbiter because the system expected adjustment data to be present for Open chargebacks and Reversal records.
+The root cause was a Fiserv system behavior, not a bug in BT code. Fiserv's adjustment processing cannot backfill until the following Monday. Three problematic patterns were identified:
+29.	Chargeback/Open records with adj_dt = null and adj_amt = null (when there should be values)
+30.	Reversal/Reversed records with adj_dt < upd_dt and adj_amt < 0 (stale, pre-reversal data)
+31.	Unknown other combinations that might emerge
+16.4 Dual-Pipeline Complexity
+Operating two simultaneous dispute pipelines (Wells and Fiserv) during the transition period created significant complexity. For merchants being migrated, Wells disputes from before the cutover date continued to arrive while Fiserv disputes for the same merchant also started flowing. The strategy engine needed to correctly differentiate between these, and the cutover strategies needed to handle 'mid-life' disputes — cases that opened on Wells but received status updates on Fiserv. Sequence diagrams were called out as a needed deliverable to map all these scenarios.
+16.5 Partial Credits / Partial Chargebacks
+A nuanced financial edge case was discovered via Slack: a credit (representing a partial refund) was received from Wells/Fiserv, but the case should NOT have been closed based on that credit alone. The question was whether Snowflake/Arbiter could reliably detect that a partial credit did not indicate a terminal status. The cb_partialAmountFlag field in the Fiserv data was identified as potentially useful here, but its presence in the original dispute record (vs. only on updates) was an open question.
+16.6 Reporting Dependency Gap
+Throughout the EPP program, a persistent gap existed between what the Disputes team could deliver technically and what Reporting could deliver on its own timeline. DFR (the long-term DFR for merchant reconciliation) and DDR (the long-term dispute detail report) had no firm ETAs for Control Panel extension. This meant that legacy reports (DFIR, DLR) would need to be maintained longer than originally hoped, delaying the clean deprecation planned for Phase 4+.
+ 17. PRE Playbook — Operational Incident Handling
+A ProcessorRecordException (PRE) is raised when Arbiter receives a dispute record from Fiserv that it cannot handle — either because data is missing/invalid, or because no matching strategy exists for the record's state. The Fiserv PRE Playbook was written by Carla Garcia Dimanche to document common PRE scenarios and the remediation steps for on-call engineers.
+17.1 Missing Adjustment Data PRE
+17.1.1 Background
+The most common PRE type after go-live was caused by missing adjustment data on weekend records. On date D, the Snowflake task queries for records with upd_dt = D-1. Normally, when upd_dt is updated, all related values (adj_dt, adj_amt) are also updated. However, for status updates made after Fiserv's Friday adjustment cutoff, the status update goes through but adjustment data cannot be filled in until the following Monday.
+17.1.2 Identification Query
+To identify PREs caused by missing adjustment data, run the following against Arbiter's database:
+SELECT pre.id, fc.status_date, fc.ids_case_number, fc.arn
+FROM fiserv_chargebacks fc
+JOIN processor_record_exceptions pre
+  ON pre.processor_record_id = fc.id
+  AND pre.processor_record_type = 'Fiserv::Chargeback'
+WHERE (
+  (fc.dispute_type = 'Chargeback' AND fc.chargeback_status = 'Open'
+   AND fc.adjustment_date IS NULL AND fc.adjustment_amount IS NULL)
+  OR
+  (fc.dispute_type = 'Reversal' AND fc.chargeback_status = 'Reversed'
+   AND fc.adjustment_date < fc.status_date AND fc.adjustment_amount < 0)
+)
+AND pre.resolved_at IS NULL AND pre.deleted_at IS NULL
+ORDER BY fc.status_date;
+17.1.3 Remediation Steps (9-Step Process)
+32.	Run the identification query above. Save the PRE IDs, status dates, IDS case numbers, and ARNs.
+33.	Manually run the chargebacks query from snowflake-terraform repo against Fiserv's Snowflake instance with WHERE upd_dt = <status_date> AND acqr_ref_no IN (<list of ARNs>).
+34.	Download results as CSV named <status_date>_backfilled_records.csv, then gzip it.
+35.	Upload gzipped file to S3: bt-production-arbiter-processor-files/fiserv/chargeback/<status_date>/
+36.	Enter a Rails console from a support pod in a production cpair.
+37.	Execute: Fiserv::FileProcessor.process("fiserv/chargeback/<status_date>/<status_date>_backfilled_records.csv.gz")
+38.	Verify processing was successful: query Dispute.allow_unscoped_find.where(case_number: [...]) and check statuses match expected open/won counts.
+39.	Verify all open disputes are still within the reply-by window. If any reply-by dates have passed, provide list to Product for merchant reimbursement review.
+40.	Mark PREs as resolved: ProcessorRecordException.allow_unscoped_find.where(id: [...]).map(&:resolve)
+17.2 PRE Prevention and Long-Term Fix
+The playbook noted that a proper automated solution was being designed (referenced as a Slack discussion from 9/20/2023 in #epp-disputes-bk). Until that fix was implemented, the above manual process needed to be run every Monday for weekend records that PREd due to missing adjustment data.
+ 18. RDR Fee Waiving and Migration Gaps
+18.1 What is RDR (Rapid Dispute Resolution)?
+Visa's Rapid Dispute Resolution (RDR) is a program where Visa automatically resolves certain disputes before they become formal chargebacks. When a dispute qualifies for RDR, Visa resolves it on the merchant's behalf, and the merchant avoids a formal chargeback record. However, there is still a fee associated with RDR resolutions.
+18.2 RDR Fee Waiving: Wells vs. Fiserv Approach
+Under the Wells integration, Braintree had implemented a blanket RDR fee-waiving approach: all Visa chargebacks for merchants on the RDR allowlist had their fees waived. This was a coarse mechanism because it waived ALL Visa chargeback fees for those merchants, not just those specifically qualifying for RDR.
+The Fiserv integration enabled a more precise approach. The pre_dispute_flag field (and the pre_dispute_program value) on Fiserv records could identify individual disputes that qualified for RDR, enabling dispute-by-dispute fee waiving rather than a blanket allowlist approach. This logic was to be implemented in Funding and Pricing. The Visa RDR allowlist logic in Funding could be deprecated once BT fully cut over to Fiserv and stopped receiving Wells records.
+18.3 Current RDR Logic Issue
+The Phase 1B/2 document explicitly called out a known issue: "Current RDR logic waives ALL CB fees and not just those for RDR." This was identified as something to improve in Phase 2 if possible. The RDR Fee Waiving page in Confluence (690976692) was marked as WIP, suggesting this improvement work was ongoing as of early 2024.
+18.4 EPP Migration Gap (RDR)
+A separate Confluence page titled 'EPP Migration Gap (RDR)' (757901160, last modified January 30, 2024) was created to document gaps identified during the migration specifically related to RDR handling. This page was inaccessible via the engineering hub at time of this document's compilation, suggesting it may have been restricted or moved.
+ 19. Appendix — Additional Technical Reference
+19.1 Key Links and Documentation References
+Document	Description	Location
+DaaS Product Package (Snowflake)	Full Snowflake schema spec from Fiserv including all enums and field types	SharePoint: AcceleratingBTBankIndependence team
+Fiserv Question Log	Running log of all questions asked of Fiserv and their responses	SharePoint: AcceleratingBTBankIndependence team
+FirstData DisputeManager User Guide	Guide to Fiserv's back-office dispute management tool	SharePoint: esahakyan personal folder
+eResponse Spec v6.0	Merchant Image Response Specification for SFTP representment submission	SharePoint: esahakyan personal folder
+Metadata.xlsx	CLX metadata including all field enumerations	SharePoint: esahakyan personal folder
+Snowflake Guide	Guide for accessing and querying Fiserv Snowflake instance	SharePoint: tkethamreddy personal folder
+Arbiter disputes-knowledge repo	Internal GitHub documentation: evidence submission, acceptance, representment architecture, processors/millennium README	github.braintreeps.com/braintree/disputes-knowledge
+Miro EPP Architecture Diagrams	Ingest, preemptive lookup, handling, and representment architecture diagrams	miro.com/app/board/uXjVPgC-SQU=
+Disputes Merchant Personas	LE/MM merchant jobs-to-be-done for dispute management	SharePoint: esahakyan personal folder
+DFM Status Mapping Spec	Mapping of Fiserv DFM status codes to Arbiter model	SharePoint: CoreDisputes team
+Evidence Recommendations CSV	Per-reason-code evidence recommendations for merchants	Arbiter repo: config/20201001_evidence_recommendations.csv
+
+19.2 Arbiter Key Classes and Components (Fiserv Integration)
+Component	Type	Description
+Fiserv::Client	Service	Queries Fiserv Snowflake instance (or reads from S3 in final design)
+Fiserv::ProcessorRecordIngestRunner	Runner	Orchestrates daily ingestion of Fiserv records
+Fiserv::FileProcessor	Service	Processes a gzipped CSV file of Fiserv records from S3
+Fiserv::Chargeback	Model	ProcessorRecord model for chargeback records (table: fiserv_chargebacks)
+Fiserv::ProcessorRecordBuilder	Builder	Constructs Fiserv::ProcessorRecord from raw Snowflake data
+Fiserv::CreateChargebackStrategy	Strategy	Creates a new Dispute from an Open chargeback record
+Fiserv::WinChargebackStrategy	Strategy	Transitions existing Dispute to Won from Reversal/Reversed record
+Fiserv::LoseDisputeStrategy	Strategy	Transitions existing Dispute to Lost
+Fiserv::UpdateDisputeStrategy	Strategy	Updates existing Dispute attributes without terminal state change
+Fiserv::CreateRetrievalStrategy	Strategy	Creates a new Dispute from an Open retrieval record
+Fiserv::Shadow::CreateChargebackStrategy	Shadow Strategy	Shadow version for testing pre-go-live
+Fiserv::EvidenceSubmissionService	Service	Submits merchant evidence to Fiserv via SFTP/eResponse
+Fiserv::DisputeAcceptanceService	Service	Notifies Fiserv when merchant accepts a dispute
+HandleProcessorRecordJob	Job	Async job that passes a persisted ProcessorRecord to HandleProcessorRecordService
+ProcessorRecordException (PRE)	Model	Persisted exception for records that cannot be processed
+TransactionLookupEvent	Model	Tracks Gateway transaction lookup lifecycle; stores dispute attributes for preemptive lookup flow
+DisputeBuilder	Builder	Creates/updates Dispute objects from processed strategy outputs
+DisputeFinder	Service	Locates existing Disputes for update/terminal strategies
+FundingDisbursementsConsumer	Consumer	Receives Funding acknowledgements of DisputeFinancialEvents
+
+19.3 Snowflake Schema Key Fields Reference
+The Fiserv Snowflake table CHARGEBACK_PPFISERV_V1 (Phase 1B/2) / CHARGEBACK_PPDEBIT_V1 (Phase 4/Goldman) contains the following key fields (from the DFM query and field mapping exercise):
+Snowflake Column	Description
+siteid	Location ID (maps to processor_merchant_id)
+upd_dt / status_date	Most recent status update date — KEY FIELD for daily ingestion filter
+cbk_status / m20.fild_valu_tx	Chargeback Status (Open, Closed, Reversed)
+orig_dsput_amt	Original Chargeback Amount (maps to amount_disputed)
+adj_amt	Adjustment Amount — positive=credit, negative=debit (maps to financial_movement_amount)
+adj_dt	Adjustment Date (maps to financial_movement_date)
+dspn_resp_due_dt	Response Due Date (maps to processor_reply_by_date)
+acqr_ref_no	Acquirer Reference Number / ARN (maps to processor_transaction_identifier AND reference_number)
+alt_dsput_id	IDS Case Number (maps to case_number)
+dsput_rsn_cd	Dispute Reason Code (maps to reason_code)
+m4.fild_valu_tx	Dispute Reason Description (maps to reason_description)
+dsput_rcvd_dt	Received Date (maps to received_date)
+invoice_no	Invoice Number — .lower maps to gateway_transaction_public_id
+pre_dsput_flag	Pre-Dispute Flag — used for RDR detection
+dspn_curr_cd	Chargeback Currency Code (maps to financial_movement_currency)
+wrk_typ_cd	Chargeback Work Type (various lifecycle stages)
+chargeback_cycle	Chargeback Cycle Code
