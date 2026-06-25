@@ -477,7 +477,6 @@ Document compiled from PayPal Confluence space DD — Elevate Payment Partnershi
 
 Feature name: Fiserv disputes integration
 Type: Feature
-Author: Carla Garcia
 Related components: Arbiter, Gateway, Funding, Reporting, Airflow, Datalake
 Jira epic: DTBTCD-1169
 PRD: Elevate Payment Partnerships Phase 4 - Disputes
