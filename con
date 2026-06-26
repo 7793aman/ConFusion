@@ -1,0 +1,182 @@
+Kyle Maurisak  [12:14 PM]
+@Carla D'Apuzzo @Aman Jain @Roberto Torres Future of Arbiter deploys 
+￼
+
+40 replies
+
+Kyle Maurisak  [12:15 PM]
+Carla and I have been discussing the future of Arbiter deploys and wanted to get a temp check on how this group was feeling.
+
+I personally think that deploying commits individually with CD is an inherently less risky process than a multi-commit release branch deploy cadence. That said, given the current hoops we have to jump through to deploy, which is slowing down our delivery time substantially, we are falling into this pattern where we end up deploying multiple commits at a time regardless. This ends up being a riskier process than both options because we have the organization and structure of a single-commit CD deployment, but are batching commits. There's no meaningful tagging, which means a deploy could be labeled with a single commit sha abc123 in tagged telemetry, but it may contain commits abc123, def245, ghi777, etc. It leaves us in a place with worse observability/auditability and an overall lower sense of awareness amongst the team as to when code is being shipped and what code is included in that shipment.
+
+So long as this manual approval process is in place, I think it actually makes sense to move towards a scheduled deploy cadence. I'm curious to get others' thoughts.
+
+Michael Scrivner  [12:17 PM]
+So we would just, say, deploy on Tuesdays and Thursdays only, and everyone would have a more reliable indicator of whether their code is/isn't going to ship?
+
+Does this help with the telemetry/observability piece?
+
+Kyle Maurisak  [12:21 PM]
+Yeah something similar to Gateway/Snowglobe/Funding.
+
+We deploy two days a week. We cut a version tag. That version tag has a release notes page that breaks down all of the changes in that release. Telemetry gets tagged with a version rather than a commit sha. When debugging a problem, the engineer knows where to find all the commits that belong to a version tag.
+
+An example of where this can break down now:
+
+* A new exception pops up in Sentry
+* Sentry shows that it's tied to a particular commit
+* You look up the commit and see nothing in the change set related to the error
+* You then have to go back and figure out if commits before this commit were deployed independently or if they were bundled with the tagged commit's changes
+[12:22 PM]
+Whereas if an issue was tied to a version and we had a structured process, the engineer wouldn't waste time and would immediately know to look for that particular release tag
+
+[12:22 PM]
+the most ideal situation is still deploying one commit at a time
+
+[12:23 PM]
+but that's not realistic given the current slow downs
+
+[12:24 PM]
+If I can hop on my 
+￼
+ for a second, it's hard to imagine a future where we're letting AI drive all these steps in this process when we can't even unblock basic CD due to lack of trust.
+
+Michael Scrivner  [12:30 PM]
+AI is easier to trust than humans. 
+￼
+
+Kyle Maurisak  [12:30 PM]
+strong disagree
+
+[12:31 PM]
+I saw that miro diagram it made for you 
+￼
+
+Michael Scrivner  [12:32 PM]
+LOL, I agree. But how much we trust AI and how much leaders trust AI are measured on different scales.
+
+[12:32 PM]
+But I agree with you, we're probably one of the slowest movers, for better or worse.
+
+Kyle Maurisak  [12:34 PM]
+Totally. I think part of the problem is response time and lack of PR review participation, while the other component is the breakdown in deployment process
+
+Aman Jain  [12:48 PM]
+This seems like a useful step because it makes the current reality more explicit and easier to debug. If we’re already batching commits due to the approval slowdown, then release tags and notes would at least give us a clear record of what shipped.
+
+My concern is that this doesn’t remove the risk of batching itself. We’d still be deploying multiple commits together, just in a more organized way. If one commit causes an issue, the whole release is still suspect. Also, today we might batch a few PRs sometimes, but other times a PR may still go out by itself. With a fixed schedule, would we be making batching the default every time?
+
+I’d be curious whether we can treat this as an interim step while still improving the current process toward smaller/faster deploys. Ideally we should still favor small, frequent deploys over scheduled batch releases long term.
+
+Aman Jain  [12:58 PM]
+One other thing I’m thinking about is that larger batch deploys can make the deploy itself feel more important/heavyweight. Part of the value of CI/CD, at least in my mind, is that deploys become routine and low-anxiety because each change is small, checks are trusted, and rollback is clear. Ideally the process should be smooth enough that any engineer, including a newerjunior engineer, can deploy safely without needing a lot of special coordination.
+
+David Miller  [1:05 PM]
+I didn't see this called out, but potential benefit is this gives us explicit time for validation of our changes
+
+[1:06 PM]
+A safety window of sorts
+
+Aman Jain  [1:08 PM]
+Validation time is useful but doesnt replace small deploys. My  concern is that validation gets harder as the batch gets larger. We may have more time to validate, but we also have more changes and more interactions to validate.
+
+David Miller  [1:08 PM]
+fwiw Matt has expressed the idea of auto-approving all releases that have a grade of A from our release bot
+
+[1:09 PM]
+maybe there's a world where these are possible:
+
+1. we cut release branches for notes and release tracking
+2. we have scheduled deploys twice per week
+3. devs are still encouraged and empowered to easily cut releases for additional deploys
+Rob Torres (Chief Fun Officer)  [1:10 PM]
+why not both
+
+
+
+Posted using /giphy
+
+[1:10 PM]
+^dmillz right now. I agree with this
+
+Aman Jain  [1:13 PM]
+I love the idea of having both, My concerns is every step that was taken so far for deploys by Braintree have made the deploy path more tougher than smooth.
+
+Kyle Maurisak  [1:13 PM]
+fwiw Matt has expressed the idea of auto-approving all releases that have a grade of A from our release bot
+
+
+Honestly I think this is kind of the crux of the problem
+
+[1:13 PM]
+the process and expectations are constantly shifting
+
+[1:16 PM]
+devs are still encouraged and empowered to easily cut releases for additional deploys
+
+
+The problem with this is that it increases the complexity for a one off deploy
+
+[1:16 PM]
+I'm worried things could get overly complex if we introduce a structure deploy cadence but also say deploy whenever
+
+[1:17 PM]
+I don't know if that solves the current problem
+
+[1:17 PM]
+@David Miller is the auto-approval idea something that will actually materialize in the near future
+
+Aman Jain  [1:18 PM]
+The core of our current problem is that our team can move faster with deploys but gets stuck at the approval step
+
+Kyle Maurisak  [1:18 PM]
+We've already put work into a process for auto approval that didn't pan out
+
+Aman Jain  [1:19 PM]
+Is there a chance we can get an exception for Arbiter given our track of not having P0/P1 and  low risk associated with the deploys and then adding rails guard on Arbiter side that we could not deploy more than one commit at a time. (edited) 
+
+Kyle Maurisak  [1:20 PM]
+That would be great. To be clear, I would love to avoid having to move to a release branch model. It's not a better solution, but the current situation is 
+￼
+
+Carla D'Apuzzo  [2:54 PM]
+I feel like moving to a versioned release process, with 2 scheduled deploys per week, and well-documented steps in case anyone needs to cut a release for an ad-hoc/emergency deploy, is the right path forward at this point.
+
+While eventually getting auto-approval for some deploys would be nice (if it ever happens), most of our releases so far have not gotten an A from that bot, and we also still ultimately need to fill out that workflow to get either an automatic or manual approval.
+
+A lot of the friction is coming from folks not filling out the workflow, filling the workflow out on top of each other, and overall losing track of what has/has not been deployed after factoring in the workflow time delay (as well as the dev who filled out the workflow not actually having prod access to take their changes out themselves).
+
+Having a clearer process/schedule for when devs can expect their changes to go out and need to be validated would be better in this new way of working IMO (edited) 
+
+David Miller  [9:43 AM]
+https://paypal.enterprise.slack.com/archives/C040H13F23Z/p1779208810785409
+
+
+
+Hi team, Just a heads-up — we have our post-processing session today with @Anurag Tiwari, who'll be walking us through the new Snowglobe release process. It's a great opportunity to get up to speed, ask questions, and align on how this impacts our work/deployment going forward.
+
+Posted in treasury-services-org | May 19th | View message
+[9:43 AM]
+Could be interesting
+
+Kyle Maurisak  [9:51 AM]
+I'll be there!
+
+Kyle Maurisak  [1:31 PM]
+I had Pal do an analysis of the time it takes to get a deploy approval since the new workflow launched. This data is specific to workflows initiated by the disputes team
+
+Screenshot 2026-05-20 at 3.29.44 PM.png 
+
+Kyle Maurisak  [1:54 PM]
+Across all teams:
+
+2 files 
+
+
+
+
+
+Kyle Maurisak  [2:01 PM]
+this one is a little better
+Screenshot 2026-05-20 at 4.00.54 PM.png 
+
