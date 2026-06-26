@@ -1,0 +1,115 @@
+Parallel Unit Test CI Story
+Short Version
+At Arbiter, the unit test stage in CI was taking around 20 minutes. That slowed every PR because engineers had to wait too long before getting useful feedback.
+
+I looked at the Jenkins setup and saw that the CI machine had multiple CPUs available, but our RSpec unit tests were still running mostly in one serial flow. Integration tests were not the main bottleneck, so I kept the scope narrow: only parallelize unit tests.
+
+I introduced the parallel_tests gem, added a parallel:unit_tests Rake task, prepared separate test databases for each worker, and wired the new task into Jenkins through Drake. I also preserved the existing Datadog CI metadata, which was used for test visibility and CI reporting.
+
+The first assumption was that 8 workers would be best because Jenkins had 8 CPUs. But after testing it, runtime improved up to around 4 workers and then started getting worse. So I tuned the worker count based on actual CI behavior instead of forcing the theoretical CPU count.
+
+The final outcome was a much faster unit test stage, roughly from 20 minutes down to a 2-3 few minutes, while preserving unit-test scope, database isolation, backtrace/profile behavior, and CI visibility.
+
+Full Interview Story
+At Arbiter, CI had become a real feedback bottleneck. The unit test stage alone was taking around 20 minutes. That meant every PR had a long delay before the author and reviewers knew whether the change was safe.
+
+I started by looking at where the time was going. The unit tests were the slow part, not the integration tests. Integration tests existed, but they were not taking enough time to justify changing their execution model. So I intentionally kept the scope small: speed up only the unit test stage.
+
+The unit tests were running through RSpec in a mostly serial way, even though the Jenkins agent had multiple CPUs available. That told me there was likely unused capacity in the CI environment.
+
+My first idea was to parallelize the unit tests. I chose the parallel_tests gem because it already supports RSpec, Rails test databases, and process-based test splitting. I did not want to build a custom test splitter when a maintained tool already solved the basic mechanics.
+
+I added parallel_tests to the Ruby test dependencies and loaded its Rake tasks. Then I created a new Rake task called parallel:unit_tests. That task first prepared the parallel test databases with parallel:create, then ran the unit specs with parallel_rspec.
+
+One important detail was database isolation. If multiple RSpec workers used the same test database, they could interfere with each other and create random failures. To avoid that, I changed the test database name to include TEST_ENV_NUMBER. That way, each parallel worker used its own database, such as arbiter_test, arbiter_test2, and so on.
+
+The next issue was preserving the old behavior of the unit test command. The existing unit stage was not just "run every spec." It intentionally excluded integration tests because integration tests were handled separately and were not the bottleneck. During review, this came up as a correctness concern. I updated the parallel command to exclude integration specs by tag and by path. The path exclusion mattered because if someone forgot to tag an integration spec, the unit stage still would not accidentally pick it up.
+
+I also had to preserve CI visibility. Datadog was not part of the test logic. It was used to report CI/test metadata, so the team could see test runs, commits, branches, and related tags in Datadog. If I replaced the old Drake command with a plain parallel command, the tests might still run, but we could lose that reporting. So I added a new Drake job, parallel_unit_test_with_datadog_tracing, and carried over the Datadog environment variables for branch, commit SHA, repository URL, author, commit message, and tags. I verified that a sample run appeared in Datadog.
+
+It did not work perfectly on the first attempt. Parallel execution exposed hidden assumptions in the test suite. Some specs depended on Rails classes already being loaded because another test had happened to load them earlier in the serial run. Once the suite was split across workers, that accidental ordering disappeared, and the specs became flaky.
+
+My first thought was to eager load only inside the affected specs. That would have fixed the local failures, but review raised a good question: if this was really a load-order issue, should every worker start from the same loaded application state? I agreed with that direction and moved eager loading into rails_helper for the test environment. That made the parallel workers more deterministic.
+
+Another thing I learned was that more parallelism was not automatically better. Since Jenkins had 8 CPUs, I first assumed 8 RSpec workers would be optimal. But in practice, the runtime improved until around 4 workers, then started getting worse.
+
+I did not claim to know the exact root cause without proof. The most likely reason was that the suite was not purely CPU-bound. Rails tests also spend time booting the app, preparing databases, loading files, writing logs, using Docker resources, and talking to the database. At higher worker counts, those shared resources can become bottlenecks. More workers can also increase memory pressure, database connection pressure, disk I/O, and uneven shard timing. So I changed the approach from "use every CPU" to "measure the best throughput point." Based on the CI runs, 4 workers was the better operating point.
+
+There were also small cleanup steps along the way. I fixed style issues, improved variable names, tried to align with existing Rake conventions, removed an approach that did not fit cleanly, and kept Drake responsible for CI/container orchestration while Rake owned the Ruby test command.
+
+The final result was not just a faster command. It was a safer CI path: unit tests ran in parallel, databases were isolated, integration tests stayed out of the unit stage, CI visibility remained intact, and Rails loading behavior was deterministic across workers.
+
+The main lesson was that parallelization is not just increasing a number. The useful work was measuring the system, finding the real bottlenecks, and making incremental changes until the faster path was also stable and maintainable.
+
+Strong Behavioral Framing
+The part I would emphasize is that the PR started as a performance improvement, but became a reliability and systems problem.
+
+The easy version would have been: add a gem, run 8 workers, call it done.
+
+The real version was more careful:
+
+I identified a CI bottleneck that affected every engineer.
+I used an existing tool instead of building a custom splitter.
+I isolated databases per worker with TEST_ENV_NUMBER.
+I kept the scope focused on unit tests because integration tests were not the time problem.
+I preserved the old unit test behavior instead of silently changing coverage.
+I kept Datadog CI metadata so the team did not lose test-run visibility.
+I handled load-order flakes exposed by parallel execution.
+I tuned worker count based on measured runtime, not CPU theory.
+That is the story: I made CI faster, but I did it by making the system more explicit and deterministic.
+
+Technical Details To Remember
+PR: PayPal-Braintree/arbiter#3659
+Title: OPENDEV: unit test in parallel woohoo
+Main dependency: parallel_tests
+Test runner: parallel_rspec
+Rake task: parallel:unit_tests
+CI/Drake job: parallel_unit_test_with_datadog_tracing
+Database isolation: arbiter_test<%= ENV["TEST_ENV_NUMBER"] %>
+Original problem: unit tests took around 20 minutes
+Scope decision: integration tests were not parallelized because they were not the bottleneck
+Measured result: unit stage dropped to a few minutes
+Initial assumption: 8 workers because Jenkins had 8 CPUs
+Final tuning lesson: around 4 workers performed better than 8 in practice
+Adversarial Questions And Answers
+Q: Did you just make CI faster by running fewer tests?
+No. The goal was to preserve the same unit test scope, not reduce coverage. Integration specs were excluded because they belonged to a separate integration stage and were not the slow part I was trying to fix. I also preserved backtrace and profile behavior from the old command.
+
+Q: Why did you use parallel_tests instead of building your own splitter?
+Because splitting RSpec files, coordinating Rails test databases, and handling worker-specific environment variables are already solved problems. A maintained gem reduced custom code and lowered maintenance risk.
+
+Q: Why did the database config need to change?
+Parallel workers cannot safely share one test database. parallel_tests sets TEST_ENV_NUMBER, so the database name used that value. Each worker got its own test database, which reduced cross-process interference.
+
+Q: Why was 8 workers not the best number if Jenkins had 8 CPUs?
+Because the test suite was not purely CPU-bound. Rails tests also use database setup, Rails boot, file loading, Docker resources, disk I/O, logs, memory, and instrumentation. At higher worker counts, those shared resources can become bottlenecks. In testing, 4 workers gave better throughput than 8.
+
+Q: Did you know exactly why performance degraded after 4 workers?
+Not with complete certainty. The evidence showed that 4 was the best measured point. The likely causes were database contention, Rails boot overhead, memory pressure, disk I/O, Docker overhead, Datadog instrumentation overhead, or uneven shard distribution. I would rather say what I measured and what I suspected than claim a root cause I did not prove.
+
+Q: Why not spend more time proving the exact cause?
+The goal was to reduce CI feedback time safely. Once 4 workers gave a strong improvement and the suite was stable, deeper profiling became a follow-up optimization. I would still monitor shard duration, DB load, and CI resource usage after rollout.
+
+Q: What problems did parallel execution expose?
+It exposed hidden load-order dependencies. Some specs passed in serial because another spec had already loaded certain Rails classes. When the suite was split across workers, that ordering disappeared. The fix was to eager load the Rails app in the test environment through rails_helper.
+
+Q: Why not eager load only inside the failing specs?
+That was one option, and I considered it. But if the real problem was that workers started with different loaded state, fixing individual specs would be narrow and fragile. Moving eager loading to rails_helper made the test environment consistent for all workers.
+
+Q: Did eager loading reduce the performance benefit?
+It probably added some boot cost, but it made the suite deterministic. A fast flaky test stage is not useful. The measured runtime was still much better than the original serial run.
+
+Q: How did you make sure Datadog visibility was not lost?
+I added the parallel test command through Drake and preserved Datadog environment variables such as branch, commit SHA, repository URL, author, commit message, and tags. Datadog was mainly for CI/test visibility, not for making the tests pass. I also verified a sample run showed up in Datadog.
+
+Q: Why did you not parallelize integration tests too?
+Because integration tests were not the bottleneck. The unit stage was taking around 20 minutes, so that was the high-impact target. Parallelizing integration tests would have added risk without much payoff.
+
+Q: What did review improve in the PR?
+Review caught important production details: excluding integration specs correctly, keeping profiler and backtrace behavior, preserving Datadog CI metrics, explaining TEST_ENV_NUMBER, and moving eager loading to the right helper.
+
+Q: What would you improve next?
+I would track shard timings and use historical runtime data to balance workers better. I would also monitor database load and CI resource usage to understand exactly why performance flattened after 4 workers.
+
+Q: What is the main engineering lesson?
+Parallelism is not automatically faster. You have to measure the real system. The best solution was not "use all CPUs." The best solution was the fastest stable configuration that preserved correctness and observability.
